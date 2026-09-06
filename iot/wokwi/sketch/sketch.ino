@@ -12,7 +12,7 @@
 
 const char* WIFI_SSID     = "Wokwi-GUEST";
 const char* WIFI_PASSWORD = "";
-const char* MQTT_BROKER   = "broker.hivemq.com";
+const char* MQTT_BROKER   = "localhost";
 const int   MQTT_PORT     = 1883;
 const char* MQTT_CLIENT   = "esp32-court01";
 const char* TOPIC         = "quadra/highlight";

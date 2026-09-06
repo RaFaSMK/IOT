@@ -41,8 +41,8 @@ A **Quadra Inteligente** soluciona esse problema conectando a quadra à nuvem:
 ┌────────────────────────────────────────────────────────────────────────┐
 │                        CAMADA DE MENSAGERIA                            │
 │                                                                        │
-│           Broker MQTT: broker.hivemq.com (Porta :1883)                 │
-│              (ou Mosquitto local para execução offline)                │
+│           Broker MQTT: Mosquitto local (Porta :1883)                    │
+│              (localhost — conexão direta do Wokwi e backend)           │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │ MQTT subscribe
                                     ▼
@@ -92,14 +92,31 @@ Para rodar todo o ecossistema na sua máquina, instale as seguintes ferramentas:
 | **InfluxDB** | 2.7+ | Banco de dados de séries temporais | [portal.influxdata.com](https://portal.influxdata.com/downloads/) |
 | **VS Code + Wokwi** | Atual | Simulação do microcontrolador ESP32 | Extensão `Wokwi Simulator` na loja do VS Code |
 | **Arduino IDE 2.x** *(Opcional)* | 2.x | Apenas se for alterar o código C++ do ESP32 | [arduino.cc](https://www.arduino.cc/en/software) |
-| **Mosquitto** *(Opcional)* | 2.x | Apenas se desejar broker MQTT local offline | [mosquitto.org](https://mosquitto.org/download/) |
+| **Mosquitto** | 2.x | **Broker MQTT local (obrigatório)** | [mosquitto.org](https://mosquitto.org/download/) |
 
 > **Nota sobre o Broker MQTT:**  
-> Por padrão, o projeto utiliza o broker público **`broker.hivemq.com:1883`**, dispensando a instalação de qualquer broker na sua máquina local e permitindo que a simulação no Wokwi se comunique diretamente com o backend!
+> O projeto utiliza o **Mosquitto** como broker MQTT local (`localhost:1883`). Tanto o backend quanto o ESP32 simulado no Wokwi conectam ao Mosquitto rodando na sua máquina. O Wokwi VS Code Extension roteia o tráfego de rede do ESP32 simulado pelo host, permitindo que `localhost` no sketch funcione corretamente.
 
 ---
 
 ## 🚀 Como Rodar o Projeto (Passo a Passo)
+
+### 0️⃣ Iniciar o Mosquitto (Broker MQTT)
+
+O Mosquitto precisa estar rodando **antes** de iniciar o backend ou o Wokwi.
+
+1. Abra um terminal e inicie o Mosquitto com a configuração do projeto:
+   ```powershell
+   mosquitto -v -c infra/mosquitto/mosquitto.conf
+   ```
+2. Você verá no terminal:
+   ```
+   mosquitto version X.X.X starting
+   Opening ipv4 listen socket on port 1883.
+   ```
+   > **Dica:** Mantenha este terminal aberto durante toda a sessão. O `-v` (verbose) mostra cada conexão e mensagem recebida — ótimo para debug na apresentação!
+
+---
 
 ### 1️⃣ Subir e Configurar o InfluxDB
 
@@ -132,7 +149,7 @@ Para rodar todo o ecossistema na sua máquina, instale as seguintes ferramentas:
 3. Abra o arquivo `.env` e cole o seu token do InfluxDB:
    ```env
    # ── MQTT ───────────────────────────────────────────────────────────────────
-   MQTT_BROKER_HOST=broker.hivemq.com
+   MQTT_BROKER_HOST=localhost
    MQTT_BROKER_PORT=1883
    MQTT_TOPIC=quadra/highlight
    MQTT_CLIENT_ID=smart-court-backend
@@ -191,7 +208,7 @@ O binário do microcontrolador já está compilado e pronto na pasta `iot/wokwi/
 1. Abra o arquivo [`iot/wokwi/diagram.json`](file:///d:/Projetos/IOT/iot/wokwi/diagram.json) no VS Code.
 2. Pressione `F1` no VS Code e selecione: **`Wokwi: Start Simulator`**.
 3. Na placa simulada:
-   - O ESP32 conectará ao WiFi virtual `Wokwi-GUEST` e ao broker `broker.hivemq.com`.
+   - O ESP32 conectará ao WiFi virtual `Wokwi-GUEST` e ao Mosquitto local (`localhost:1883`).
    - O LED azul piscará 3 vezes indicando que está pronto.
 4. **Clique no botão verde "HIGHLIGHT"**:
    - O LED azul dará uma piscada longa de confirmação.
@@ -232,7 +249,7 @@ Abra o dashboard (`http://localhost:5173`) e observe os dados populados nos grá
 
 ## 🔌 Contrato de Mensageria MQTT
 
-- **Broker Padrão:** `broker.hivemq.com` (porta `1883`, TCP sem TLS)
+- **Broker:** Mosquitto local — `localhost` (porta `1883`, TCP sem TLS)
 - **Tópico:** `quadra/highlight`
 - **QoS:** `1` (At least once)
 
@@ -342,8 +359,10 @@ smart-court/ (d:\Projetos\IOT)
   *Sketch* → *Export Compiled Binary* (`Ctrl+Alt+S`).
 
 ### 3. Falha de conexão com o Broker MQTT
-- O broker padrão `broker.hivemq.com` requer conexão com a internet ativa na porta 1883.
-- Se a sua rede bloquear a porta 1883 de saída (alguns WiFi corporativos bloqueiam), você pode iniciar o Mosquitto localmente (`mosquitto -v -c infra/mosquitto/mosquitto.conf`) e definir `MQTT_BROKER_HOST=localhost` no `backend/.env`.
+- Certifique-se de que o Mosquitto está rodando antes de iniciar o backend ou o Wokwi.
+- Execute: `mosquitto -v -c infra/mosquitto/mosquitto.conf`
+- Se o Mosquitto não estiver instalado, baixe em [mosquitto.org](https://mosquitto.org/download/) e adicione ao PATH do sistema.
+- **Alternativa de emergência:** Se não conseguir instalar o Mosquitto no notebook, altere `MQTT_BROKER_HOST=broker.hivemq.com` no `.env` e no sketch (requer recompilar no Arduino IDE).
 
 ### 4. Letras quebradas ou erro de log no terminal Windows
 - O backend inclui `sys.stdout.reconfigure(encoding="utf-8")` por padrão em `backend/main.py`, garantindo que os emojis e logs coloridos funcionem normalmente no PowerShell do Windows.

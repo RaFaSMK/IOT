@@ -29,7 +29,7 @@ try:
     TOPIC = settings.MQTT_TOPIC
 except Exception:
     import os
-    BROKER_HOST = os.getenv("MQTT_BROKER_HOST", "broker.hivemq.com")
+    BROKER_HOST = os.getenv("MQTT_BROKER_HOST", "localhost")
     BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", "1883"))
     TOPIC = os.getenv("MQTT_TOPIC", "quadra/highlight")
 

@@ -1,0 +1,8 @@
+[wokwi]
+version = 1
+
+# Binários gerados pelo Arduino IDE (Export Compiled Binary)
+# O Arduino IDE compila e copia automaticamente para esta pasta:
+elf      = "sketch/build/esp32.esp32.esp32/sketch.ino.elf"
+firmware = "sketch/build/esp32.esp32.esp32/sketch.ino.bin"
+

@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "author": "Quadra Inteligente — Beach Tennis IoT",
+  "editor": {
+    "zoom": 1.5
+  },
+  "parts": [
+    {
+      "type": "wokwi-esp32-devkit-v1",
+      "id": "esp",
+      "top": 80,
+      "left": 120,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn1",
+      "top": 80,
+      "left": -80,
+      "attrs": {
+        "color": "green",
+        "label": "HIGHLIGHT"
+      }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led1",
+      "top": 240,
+      "left": -80,
+      "attrs": {
+        "color": "blue",
+        "label": "STATUS"
+      }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r1",
+      "top": 200,
+      "left": -80,
+      "attrs": {
+        "value": "220"
+      }
+    }
+  ],
+  "connections": [
+    [ "esp:GND.1",  "btn1:2.l",  "black",  ["h0"] ],
+    [ "esp:D13",   "btn1:1.l",  "green",  ["h0"] ],
+    [ "esp:D2",    "r1:1",      "blue",   ["h0"] ],
+    [ "r1:2",      "led1:A",    "blue",   ["h0"] ],
+    [ "esp:GND.2", "led1:C",    "black",  ["h0"] ]
+  ],
+  "dependencies": {}
+}

@@ -36,6 +36,8 @@ pnpm-debug.log*
 
 # Arquivos de debug pesados de compilação C++ (manter .bin e .elf necessários para Wokwi)
 *.map
+*.merged.bin
+build.options.json
 
 # Sistema operacional & IDEs
 .DS_Store

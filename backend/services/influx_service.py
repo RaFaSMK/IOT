@@ -45,11 +45,7 @@ def write_highlight(event_data: dict) -> None:
     """
     get_client()
 
-    ts_raw = event_data.get("timestamp")
-    if ts_raw:
-        event_time = datetime.fromtimestamp(float(ts_raw), tz=timezone.utc)
-    else:
-        event_time = datetime.now(tz=timezone.utc)
+    event_time = datetime.now(tz=timezone.utc)
 
     point = (
         Point("highlight_events")

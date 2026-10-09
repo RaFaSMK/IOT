@@ -1,0 +1,258 @@
+name: smart-court
+
+x-app: &app
+  image: smart-court-app:local
+  build:
+    context: .
+    dockerfile: backend/Dockerfile
+  restart: unless-stopped
+  mem_limit: 512m
+  volumes:
+    - secrets:/secrets:ro
+    - artifacts:/data
+  environment: &environment
+    SECRETS_FILE: /secrets/config.json
+    DATA_DIR: /data
+    INFLUX_URL: http://influxdb:8086
+    INFLUX_ORG: smart-court
+    INFLUX_BUCKET: smart_court
+    OLLAMA_MODEL: llama3.2:3b
+  depends_on: &dependencies
+    database-init:
+      condition: service_completed_successfully
+    rabbitmq:
+      condition: service_healthy
+    influxdb:
+      condition: service_healthy
+  healthcheck: &worker-health
+    test: [CMD, python, -c, "import pathlib,time; p=pathlib.Path('/tmp/worker.healthy'); assert p.exists() and time.time()-p.stat().st_mtime<45"]
+    interval: 15s
+    timeout: 5s
+    retries: 3
+    start_period: 30s
+
+services:
+  bootstrap:
+    <<: *app
+    restart: 'no'
+    command: [python, scripts/bootstrap.py]
+    volumes:
+      - secrets:/secrets
+      - artifacts:/data
+    depends_on: {}
+    healthcheck:
+      disable: true
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: court
+      POSTGRES_USER: court
+      POSTGRES_PASSWORD_FILE: /secrets/postgres_password
+    volumes:
+      - secrets:/secrets:ro
+      - postgres:/var/lib/postgresql/data
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U court -d court']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  influxdb:
+    image: influxdb:2.7
+    restart: unless-stopped
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: court
+      DOCKER_INFLUXDB_INIT_ORG: smart-court
+      DOCKER_INFLUXDB_INIT_BUCKET: smart_court
+    entrypoint: [/bin/sh, -c]
+    command: ['export DOCKER_INFLUXDB_INIT_PASSWORD="$$(cat /secrets/influx_password)" DOCKER_INFLUXDB_INIT_ADMIN_TOKEN="$$(cat /secrets/influx_token)"; exec /entrypoint.sh influxd']
+    volumes:
+      - secrets:/secrets:ro
+      - influxdb:/var/lib/influxdb2
+    ports:
+      - 127.0.0.1:18086:8086
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, influx, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    restart: unless-stopped
+    mem_limit: 1g
+    environment:
+      RABBITMQ_CONFIG_FILE: /secrets/rabbitmq
+    volumes:
+      - secrets:/secrets:ro
+      - rabbitmq:/var/lib/rabbitmq
+    ports:
+      - 127.0.0.1:15672:15672
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, rabbitmq-diagnostics, -q, check_port_connectivity]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    command: [mosquitto, -c, /mosquitto/config/aiot.conf]
+    volumes:
+      - ./infra/mosquitto/aiot.conf:/mosquitto/config/aiot.conf:ro
+      - secrets:/secrets:ro
+      - mosquitto:/mosquitto/data
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD-SHELL, 'nc -z 127.0.0.1 1883']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  database-init:
+    <<: *app
+    restart: 'no'
+    command: [python, -c, 'from aiot.database import initialize; initialize()']
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+
+  api:
+    <<: *app
+    environment:
+      <<: *environment
+      SERVICE_NAME: api
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/ready',timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  gateway:
+    <<: *app
+    command: [python, -m, aiot.gateway]
+    environment:
+      <<: *environment
+      SERVICE_NAME: gateway
+    depends_on:
+      <<: *dependencies
+      mosquitto:
+        condition: service_healthy
+
+  simulator:
+    <<: *app
+    command: [python, -m, aiot.simulator]
+    environment:
+      <<: *environment
+      SERVICE_NAME: simulator
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+
+  writer:
+    <<: *app
+    command: [python, -m, aiot.workers, writer]
+    environment:
+      <<: *environment
+      SERVICE_NAME: writer
+
+  rules:
+    <<: *app
+    command: [python, -m, aiot.workers, rules]
+    environment:
+      <<: *environment
+      SERVICE_NAME: rules
+
+  inference:
+    <<: *app
+    command: [python, -m, aiot.workers, inference]
+    environment:
+      <<: *environment
+      SERVICE_NAME: inference
+
+  generator:
+    <<: *app
+    mem_limit: 1200m
+    command: [python, -m, aiot.workers, generator]
+    environment:
+      <<: *environment
+      SERVICE_NAME: generator
+
+  trainer:
+    <<: *app
+    mem_limit: 2g
+    command: [python, -m, aiot.workers, trainer]
+    environment:
+      <<: *environment
+      SERVICE_NAME: trainer
+
+  ollama:
+    build:
+      context: ./infra/ollama
+    restart: unless-stopped
+    mem_limit: 4g
+    environment:
+      OLLAMA_CONTEXT_LENGTH: 4096
+      OLLAMA_KEEP_ALIVE: 30m
+      OLLAMA_NUM_PARALLEL: 1
+    volumes:
+      - ollama:/models
+    healthcheck:
+      test: [CMD, ollama, list]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  model-init:
+    image: ollama/ollama:latest
+    user: '10001:10001'
+    restart: 'no'
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      HOME: /tmp
+    entrypoint: [/bin/sh, -c]
+    command: ['ollama pull llama3.2:3b && ollama run llama3.2:3b "Responda pronto."']
+    depends_on:
+      ollama:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    ports:
+      - 8080:8080
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, wget, -q, --spider, http://127.0.0.1:8080/]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  secrets:
+  artifacts:
+  postgres:
+  influxdb:
+  rabbitmq:
+  mosquitto:
+  ollama:

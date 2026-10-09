@@ -1,5 +1,21 @@
 # 🎾 Quadra Inteligente de Beach Tennis — IoT Highlight System
 
+## Versão AIoT — segundo bimestre
+
+A versão atual preserva os highlights e acrescenta sensores da quadra, controle dos refletores e manutenção preditiva do compressor de um bebedouro. Usa Vue 3 + TypeScript + Vite + ECharts + Three.js, FastAPI, WebSocket, Mosquitto, RabbitMQ, PostgreSQL, InfluxDB, dois regressores scikit-learn e assistente Ollama local.
+
+Na raiz, execute `docker compose up --build -d` e abra **http://localhost:8080**. O bootstrap gera os segredos; o primeiro preparo baixa o modelo local. As contas de demonstração são `visualizador`, `operador` e `administrador`; consulte as senhas geradas com `docker compose run --rm --no-deps bootstrap cat /secrets/demo-users.txt` no seu terminal.
+
+Consulte [arquitetura, execução, segurança, testes e roteiro completo do segundo bimestre](docs/implementacao-2bim.md). O [diagnóstico da base original](docs/segundo-bimestre-analise.md) registra o estado anterior à implementação e suas propostas iniciais.
+
+Para retomar após a formatação, leia [CONTEXTO_PARA_RETOMAR.md](CONTEXTO_PARA_RETOMAR.md). O [registro de validação](docs/validacao-2bim.md) contém os testes executados, métricas reais e capturas da interface. O [enunciado da atividade](docs/2Bim.MD) também está salvo no projeto.
+
+---
+
+## Referência da versão do primeiro bimestre
+
+As instruções abaixo descrevem a versão original com Wokwi e serviços locais. Para a apresentação do segundo bimestre, utilize o Compose e o guia acima.
+
 > Sistema IoT ponta a ponta para detecção, persistência e visualização de **highlights esportivos em tempo real**.  
 > Disparado por um botão na quadra (ESP32 simulado no Wokwi ou físico), o evento trafega via **MQTT**, é processado pelo backend **FastAPI**, persistido no **InfluxDB 2.x** e exibido instantaneamente em um **Dashboard Vue 3 + ECharts**.
 

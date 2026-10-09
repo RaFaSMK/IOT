@@ -1,7 +1,7 @@
 <template>
-  <Dashboard />
+  <CourtApp />
 </template>
 
 <script setup lang="ts">
-import Dashboard from '@/views/Dashboard.vue'
+import CourtApp from '@/views/CourtApp.vue'
 </script>

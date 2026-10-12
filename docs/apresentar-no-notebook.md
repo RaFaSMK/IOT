@@ -74,7 +74,7 @@ docker compose start
 docker compose ps -a
 ```
 
-Abra a interface e teste as previsões e o Assistente. `start` reutiliza containers, imagens e volumes já preparados; não é necessário refazer build nem executar o preparo/download do modelo. Faça esse ensaio real no notebook para confirmar que a apresentação funciona offline.
+Abra a interface e teste as previsões e o Assistente. `start` reutiliza containers, imagens e volumes já preparados; não é necessário refazer build. Os serviços de inicialização podem executar novamente, mas `model-init` verifica primeiro o modelo local e só tenta baixá-lo se estiver ausente. Faça esse ensaio real no notebook para confirmar que a apresentação funciona offline.
 
 ## 5. No dia
 
@@ -86,7 +86,7 @@ docker compose start
 docker compose ps -a
 ```
 
-Abra <http://localhost:8080> e siga [o roteiro de demonstração](implementacao-2bim.md#demonstração-na-ordem-do-enunciado). Para demonstrar a subida pelo Compose, use `docker compose up -d` com internet disponível; offline, use `start`, reutilizando os containers previamente preparados, pois `model-init` pode tentar consultar o registro de modelos ao rodar novamente. Desative a suspensão automática durante a apresentação. Ao terminar, use `docker compose stop`.
+Abra <http://localhost:8080> e siga [o roteiro de demonstração](implementacao-2bim.md#demonstração-na-ordem-do-enunciado). Para demonstrar a subida pelo Compose com tudo já preparado, use `docker compose up -d --pull never --no-build`; o modelo já baixado é reutilizado. A primeira preparação com internet continua sendo `docker compose up --build -d`. Desative a suspensão automática durante a apresentação. Ao terminar, use `docker compose stop`.
 
 Se atualizar o código depois da preparação, execute `git pull --ff-only` e `docker compose up --build -d`, seguido de `docker compose restart frontend` para atualizar a conexão do proxy com uma API recriada. Repita os testes antes da apresentação.
 

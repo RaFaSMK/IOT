@@ -138,6 +138,8 @@ Os **19 testes unitários** passaram. `python -m scripts.check_assistant` exerci
 
 O ensaio real `python -m scripts.check_live live` também passou após a correção: regra automática, inferência, falha, alerta persistido/WebSocket, chat em streaming e recuperação por histerese. Na resposta testada, o backend exibiu **saúde 36,80 abaixo de 40** e **RUL 277,93 h NÃO abaixo de 48 h**, apontando somente saúde como limite violado. Ao terminar, regra 16/10 °C restaurada e zero alertas ativos. Os 14 serviços permanentes ficaram saudáveis.
 
+A inicialização do Ollama passou a consultar o modelo local antes de baixar; o teste de `model-init` mostrou “Modelo local existente; sem download.” e encerrou com código zero. Isso permite reutilizar o modelo preparado no notebook sem exigir novo download. O ensaio sem internet no próprio notebook continua pendente.
+
 O notebook informado é Core i7 de 13ª geração, com 32 GB de RAM. O caminho recomendado é clonar o GitHub e preparar um ambiente novo antes da apresentação, conforme [o guia atualizado](apresentar-no-notebook.md). Contribuições de integrantes não foram alteradas nem inventadas.
 
 ### Registro histórico das pendências encontradas na auditoria inicial

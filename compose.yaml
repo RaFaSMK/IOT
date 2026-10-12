@@ -230,7 +230,7 @@ services:
       OLLAMA_HOST: http://ollama:11434
       HOME: /tmp
     entrypoint: [/bin/sh, -c]
-    command: ['ollama pull llama3.2:3b && ollama run llama3.2:3b "Responda pronto."']
+    command: ['if ollama show llama3.2:3b >/dev/null 2>&1; then echo "Modelo local existente; sem download."; else ollama pull llama3.2:3b || exit 1; fi; ollama run llama3.2:3b "Responda pronto."']
     depends_on:
       ollama:
         condition: service_healthy

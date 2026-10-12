@@ -1,6 +1,6 @@
 # Checklist do professor — auditoria de 12/10/2026
 
-**Conclusão após as correções de 12/10/2026: os requisitos técnicos conferidos estão implementados e os principais fluxos passaram nos testes.** A ressalva factual do Assistente foi corrigida com respostas baseadas em fatos do backend e seleção estruturada pelo Ollama. O README recebeu o diagrama atual e o roteiro resumido. As alterações desta revisão estão destinadas à branch main do GitHub. O ensaio no notebook ainda depende do usuário; contribuições do grupo ficaram fora desta rodada por decisão expressa dele.
+**Conclusão após as correções de 12/10/2026: os requisitos técnicos conferidos estão implementados e os principais fluxos passaram nos testes.** A ressalva factual do Assistente foi corrigida com respostas baseadas em fatos do backend e seleção estruturada pelo Ollama. O README recebeu o diagrama atual e o roteiro resumido. As alterações foram publicadas na branch main do GitHub. O ensaio no notebook ainda depende do usuário; contribuições do grupo ficaram fora desta rodada por decisão expressa dele.
 
 Base: texto completo enviado pelo usuário nesta conversa, com apresentação em **16/11/2026**, e enunciado preservado em [2Bim.MD](2Bim.MD). O diagrama anexado foi tratado como referência; a inspeção considerou os serviços efetivamente usados no Compose.
 
@@ -29,7 +29,7 @@ Legenda: **OK** = evidência observada; **Parcial** = implementado com ressalva/
 | 17 | Saúde, RUL, tendência e alertas ao vivo | OK | Página Insights inspecionada durante falha; alerta persistido, entregue e resolvido após reset/histerese. |
 | 18 | Assistente local responde sobre os dados | OK após correção | Ollama local seleciona fatos com JSON Schema; backend transmite textos e valores verificados. Quatro cenários reais de LLM conferiram limites, histerese, métricas e arquitetura. |
 | 19 | Tudo no Docker Compose, um comando | OK local | `docker compose up -d` iniciou a pilha existente; 14 serviços permanentes com healthcheck. Bootstrap, database-init e model-init encerraram com zero. Instalação limpa em outra máquina não foi ensaiada nesta auditoria. |
-| 20 | Código versionado no GitHub | Revisão pronta para publicação | Remoto `RaFaSMK/IOT`; alterações da organização, correção do chat, README e guias incluídas na revisão da main. A conferência inicial do histórico de autores é registrada abaixo; o usuário excluiu esse assunto do escopo de correção. |
+| 20 | Código versionado no GitHub | OK publicação na main | Remoto `RaFaSMK/IOT`; commit de código `ea229b8` publicado e hash remoto conferido. A conferência inicial do histórico de autores é registrada abaixo; o usuário excluiu esse assunto do escopo de correção. |
 
 ## Fluxos que devem ser demonstrados
 
@@ -132,7 +132,7 @@ Os limites de login/chat foram conferidos no código; não foi executado um ensa
 
 1. **Assistente corrigido.** Limites compartilhados entre regras e contexto; alertas novos descrevem saúde e RUL separadamente. Mensagens antigas genéricas não são usadas como prova dos limites atuais. Previsões vencidas/desligadas não fornecem valores como atuais. O Ollama recebe as seções factuais e retorna seus IDs por [saída estruturada](https://docs.ollama.com/capabilities/structured-outputs); somente o texto do backend é exibido, em streaming. O chat permanece local e continua selecionando informações a partir da pergunta em linguagem natural.
 2. **README atualizado.** Diagrama AIoT completo e roteiro resumido incluídos diretamente na seção do segundo bimestre.
-3. **GitHub.** A revisão inclui as mudanças anteriores de organização, remoção do script de backup, hostname fixo do RabbitMQ, checklist, guia do notebook e correção do chat. Publicação autorizada pelo usuário na main; confirmar o hash remoto ao finalizar o push.
+3. **GitHub publicado.** A revisão inclui as mudanças anteriores de organização, remoção do script de backup, hostname fixo do RabbitMQ, checklist, guia do notebook e correção do chat. Commit de código `ea229b8` enviado para a main e conferido com `git ls-remote`; este registro de conclusão acompanha a revisão.
 
 Os **19 testes unitários** passaram. `python -m scripts.check_assistant` exercitou a rota e o Ollama real em quatro cenários controlados, em processo isolado: saúde 38/RUL 294,8; saúde 80/RUL 24; recuperação saúde 90/RUL 300 com alerta ainda ativo; métricas e arquitetura. Os valores, condições e streaming foram conferidos automaticamente. Os fixtures não modificam a telemetria nem o banco em uso.
 
@@ -170,6 +170,6 @@ O desenho é compatível com o fluxo geral, mas simplifica três aspectos da imp
 - [ ] Perguntar ao LLM sobre a falha e conferir a explicação com os valores da tela.
 - [ ] Todos os integrantes capazes de explicar suas contribuições e a arquitetura.
 
-## Efeitos desta auditoria
+## Efeitos da auditoria inicial, anterior à correção
 
 Foram criados um dataset, uma nova versão de treino, um highlight e registros normais de auditoria. Duas mensagens inválidas de teste permanecem na DLQ. Um cadastro foi editado e restaurado. A regra foi restaurada, a falha foi resetada e writer/simulator foram retomados. Os refletores ficaram ligados pelo teste de comando, sem comando de desligamento posterior. Nenhum volume ou dado anterior foi apagado. Código funcional não foi alterado; somente esta checklist e sua referência no README foram acrescentadas nesta solicitação.

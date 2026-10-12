@@ -1,5 +1,11 @@
 # Validação da versão AIoT
 
+## Revisão de 12/10/2026
+
+Após a restauração do PC, os fluxos de comando, histórico, WebSocket, DLQ, geração/treino e cena 3D foram conferidos novamente; detalhes em [checklist-professor-2bim.md](checklist-professor-2bim.md). O assistente foi corrigido para selecionar fatos por JSON Schema no Ollama e exibir apenas valores/comparações calculados no backend. Passaram 19 testes unitários, quatro cenários controlados com Ollama real e o ensaio real de regra/falha/alerta/chat/reset. O README inclui o diagrama AIoT atual. O [guia do notebook](apresentar-no-notebook.md) recomenda clonar o GitHub e preparar geração/treino antes da apresentação.
+
+No teste real do chat, saúde 36,80 estava abaixo de 40, enquanto RUL 277,93 h não estava abaixo de 48 h; a resposta indicou somente o limite de saúde. A regra original foi restaurada e o alerta resolvido após recuperação. Os resultados de 08/10 abaixo são mantidos como registro histórico.
+
 Verificação realizada em 08/10/2026, no Windows com Docker Desktop/WSL2. Todos os serviços permanentes chegaram ao estado saudável; bootstrap, inicialização do banco e download/aquecimento do modelo encerraram com código zero.
 
 ## Resultados

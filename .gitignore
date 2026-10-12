@@ -18,6 +18,10 @@ secrets/
 data/
 artifacts/
 
+# Backups locais incluem credenciais e bancos completos
+Backups/
+Backups.rar
+
 # Node & Frontend
 node_modules/
 frontend/node_modules/

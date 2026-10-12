@@ -1,5 +1,9 @@
 # Contexto para retomar o projeto após formatar o PC
 
+> Atualização de 11/10/2026: projeto recuperado em `E:\Projetos\IOT`, volumes restaurados e 14 serviços permanentes saudáveis. Login dos três papéis, histórico e telemetria/previsões por WebSocket foram verificados; dataset e modelo ativo anteriores foram recuperados. A pedido do usuário, backups locais e scripts de restauração foram removidos. Os dados em uso continuam nos volumes Docker. Consulte [o guia do notebook](docs/apresentar-no-notebook.md) para preparar outra máquina.
+
+> Atualização de 12/10/2026: checklist do enunciado em `docs/checklist-professor-2bim.md`. O chat passou a usar seleção de fatos por JSON Schema no Ollama: backend calcula números/limites, e o modelo escolhe quais seções respondem à pergunta. Regras e contexto compartilham limites em `aiot/predictive.py`; mensagens de alerta não confundem saúde e RUL. README atualizado com arquitetura AIoT e roteiro; 19 testes unitários e quatro cenários com LLM real passaram. Usuário autorizou publicação na main; contribuições do grupo ficaram fora desta rodada. Notebook informado: i7 13ª geração, 32 GB RAM; preparar via GitHub e gerar/treinar novamente antes de apresentar.
+
 Este arquivo registra o contexto da implementação com o Codex. Ele permite continuar em uma conversa nova, sem depender do histórico deste chat.
 
 ## Pedido e decisões do usuário
@@ -75,7 +79,7 @@ Login JWT: `visualizador` lê, `operador` comanda, `administrador` também geren
 6. Consultar as senhas locais: `docker compose run --rm --no-deps bootstrap cat /secrets/demo-users.txt`.
 7. Seguir [o roteiro completo](docs/implementacao-2bim.md).
 
-Sem restaurar volumes, o Compose cria um ambiente novo. O laboratório permite gerar e treinar novamente. O histórico, contas e artefatos anteriores dependem do backup dos volumes; instruções acompanham o backup em D:.
+Em outra máquina, o Compose cria um ambiente novo. O laboratório permite gerar e treinar novamente. Copiar o código não transfere histórico, contas e artefatos dos volumes Docker. Os backups antigos foram removidos; para levar o estado exato do PC seria necessário exportar os volumes atuais. Consulte [o roteiro do notebook](docs/apresentar-no-notebook.md).
 
 Dependências para desenvolvimento: Python com `uv` no backend e Node para compilar o frontend; Node não é backend. Para subir pelos containers, basta Docker. Dependências Python estão fixadas em `uv.lock`/`requirements.lock.txt`; frontend usa `package-lock.json`.
 

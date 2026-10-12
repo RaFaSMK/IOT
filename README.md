@@ -2,6 +2,10 @@
 
 ## Versão AIoT — segundo bimestre
 
+**Para apresentar em outra máquina:** siga [o passo a passo do notebook](docs/apresentar-no-notebook.md), incluindo preparo dos modelos e ensaio sem internet.
+
+**Conferência do enunciado:** [checklist com testes e pendências, verificada em 12/10/2026](docs/checklist-professor-2bim.md).
+
 A versão atual preserva os highlights e acrescenta sensores da quadra, controle dos refletores e manutenção preditiva do compressor de um bebedouro. Usa Vue 3 + TypeScript + Vite + ECharts + Three.js, FastAPI, WebSocket, Mosquitto, RabbitMQ, PostgreSQL, InfluxDB, dois regressores scikit-learn e assistente Ollama local.
 
 Na raiz, execute `docker compose up --build -d` e abra **http://localhost:8080**. O bootstrap gera os segredos; o primeiro preparo baixa o modelo local. As contas de demonstração são `visualizador`, `operador` e `administrador`; consulte as senhas geradas com `docker compose run --rm --no-deps bootstrap cat /secrets/demo-users.txt` no seu terminal.
@@ -9,6 +13,51 @@ Na raiz, execute `docker compose up --build -d` e abra **http://localhost:8080**
 Consulte [arquitetura, execução, segurança, testes e roteiro completo do segundo bimestre](docs/implementacao-2bim.md). O [diagnóstico da base original](docs/segundo-bimestre-analise.md) registra o estado anterior à implementação e suas propostas iniciais.
 
 Para retomar após a formatação, leia [CONTEXTO_PARA_RETOMAR.md](CONTEXTO_PARA_RETOMAR.md). O [registro de validação](docs/validacao-2bim.md) contém os testes executados, métricas reais e capturas da interface. O [enunciado da atividade](docs/2Bim.MD) também está salvo no projeto.
+
+### Arquitetura AIoT atual
+
+```mermaid
+flowchart LR
+    SIM[Simulador Python] <-->|MQTT: leituras e comandos| MQTT[Mosquitto]
+    MQTT <-->|MQTT| GW[Gateway]
+    GW <-->|Eventos e comandos| BUS[RabbitMQ: exchange topic + filas + DLQ]
+    BUS --> WR[Gravador]
+    WR --> INFLUX[(InfluxDB: telemetria e highlights)]
+    BUS --> AI[Inferência de saúde e RUL]
+    AI -->|Previsões| BUS
+    BUS --> RULES[Regras e alertas]
+    RULES -->|Comandos e alertas| BUS
+    RULES --> PG[(PostgreSQL: usuários, dispositivos, regras, alertas, auditoria e jobs)]
+    BUS <-->|Eventos, comandos e jobs| API[API FastAPI]
+    INFLUX -->|Histórico| API
+    API <--> PG
+    API <-->|REST e WebSocket| WEB[Vue 3 + ECharts + Three.js]
+    BUS --> GEN[Gerador de dados]
+    BUS --> TRAIN[Treinador]
+    GEN --> ART[Volume: datasets e modelos]
+    ART --> TRAIN
+    TRAIN --> ART
+    ART --> AI
+    GEN -->|Progresso| BUS
+    TRAIN -->|Progresso e versão ativa| BUS
+    GEN --> PG
+    TRAIN --> PG
+    API <-->|Resumo dos dados e resposta em streaming| LLM[Ollama local em CPU]
+```
+
+Mosquitto atende a borda IoT; RabbitMQ distribui os eventos internos. O LLM recebe um resumo pronto da API e seleciona as informações relevantes por uma saída estruturada. A API transmite em streaming os textos e valores verificados, com saúde e RUL avaliadas separadamente, sem renderizar afirmações livres do modelo. O LLM não consulta bancos diretamente. Node.js é utilizado apenas no build do frontend.
+
+### Roteiro resumido de apresentação
+
+1. Subir com `docker compose up --build -d` e mostrar `docker compose ps -a`.
+2. Demonstrar os três papéis, sensores, Dashboard, histórico, Swagger e cadastro.
+3. Em Mensageria, parar `writer`, mostrar acúmulo e retomar; inspecionar a DLQ sem remover mensagens.
+4. Comandar refletores e mostrar a regra automática da refrigeração.
+5. Gerar o dataset padrão (1.555.200 leituras), treinar saúde/RUL e explicar split, métricas e baseline.
+6. Injetar falha, observar Insights e 3D, perguntar ao Assistente e restaurar o equipamento.
+7. Parar o simulador, mostrar a cena sem dados e retomá-lo. Ao terminar, usar `docker compose stop`.
+
+O [roteiro completo](docs/implementacao-2bim.md) detalha comandos e resultados. As previsões são demonstrações sintéticas; a RUL ainda tem erro alto e não representa um prazo calibrado para falha de um compressor real.
 
 ---
 

@@ -1,4 +1,6 @@
 .git
+Backups
+Backups.rar
 **/node_modules
 **/.venv
 **/__pycache__

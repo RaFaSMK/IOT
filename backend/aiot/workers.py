@@ -8,6 +8,7 @@ from .contracts import Event, LabConfig
 from .database import session, Job, ModelVersion, Rule, Alert, audit
 from .features import CHANNELS, WINDOW
 from .ml import Predictor, generate, train, activate
+from .predictive import limit_checks, prediction_facts
 from . import storage
 
 log = logging.getLogger(__name__)
@@ -94,10 +95,12 @@ class Workers:
                         return bool(row and row.active)
                 self.hysteresis[alert_id] = Hysteresis(await asyncio.to_thread(load_state))
             data = event.payload
-            transition = self.hysteresis[alert_id].update(data['health'] < 40 or data['rul_hours'] < 48)
+            transition = self.hysteresis[alert_id].update(any(limit_checks(data).values()))
             if transition is None:
                 return
-            message = 'Compressor com saúde baixa ou vida útil restante abaixo de 48 h. Inspecione o equipamento.'
+            message = ('Alerta do compressor. ' if transition else 'Compressor recuperado. ') + prediction_facts(data)
+            if transition:
+                message += ' Inspecione o equipamento.'
             def persist():
                 with session() as db:
                     row = db.get(Alert, alert_id)

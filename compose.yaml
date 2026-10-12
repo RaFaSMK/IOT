@@ -88,6 +88,8 @@ services:
 
   rabbitmq:
     image: rabbitmq:3.13-management
+    # Mantém a identidade do nó presente no backup de 08/10/2026.
+    hostname: e7fb3fc510ed
     restart: unless-stopped
     mem_limit: 1g
     environment:

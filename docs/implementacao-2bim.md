@@ -87,7 +87,7 @@ docker compose stop
 6. Mostrar leituras no InfluxDB e cadastro, regras e auditoria no PostgreSQL; consultar histórico no Dashboard.
 7. Mostrar valores e gráficos chegando pelo WebSocket.
 8. Ligar refletores pela Web. Mostrar a refrigeração automática: liga acima de 16 °C e desliga abaixo de 10 °C por padrão; limites configuráveis na administração.
-9. Gerar o dataset padrão no Laboratório: 30 equipamentos, 60 dias, intervalo de 5 minutos, 518.400 amostras e 1.555.200 leituras.
+9. Gerar o dataset padrão no Laboratório: 100 equipamentos, 60 dias, intervalo de 5 minutos, 1.728.000 amostras e 5.184.000 leituras.
 10. Selecionar o dataset concluído em Treinamento, disparar os dois modelos e mostrar métricas, gráficos e comparação com a base simples.
 11. Injetar falha no compressor e mostrar medições, saúde, RUL e alertas em Insights e na quadra 3D.
 12. Perguntar ao assistente local sobre o compressor, o alerta, as métricas ou o fluxo dos dados.
@@ -98,7 +98,9 @@ A cena 3D muda a iluminação ambiente conforme a luminosidade e as nuvens confo
 
 O gerador usa NumPy por equipamento/bloco e salva matrizes com memmap. Limites: dois milhões de amostras e vinte milhões de leituras. A contagem de leituras corresponde aos valores dos três tipos de sensor e suas réplicas configuradas.
 
-Treino e inferência usam `aiot/features.py`: última leitura, média, desvio, máximo e tendência de uma janela de 12 medições passadas. Ausências são preenchidas causalmente e outliers limitados a faixas físicas amplas. Alvos de saúde e tempo até a falha existem somente no dataset. O simulador não envia desgaste ou rótulos para a IA.
+Na dinâmica `compressor-v2`, cada publicação a cada 2 segundos representa 5 minutos simulados. A RUL é medida em horas de operação simuladas, supondo continuidade da degradação; não é prazo de relógio real. O regressor de RUL é treinado/avaliado somente na degradação observável. Em condição saudável, o prazo é inconclusivo. Consulte [a validação v2](validacao-rul-v2-2026-10-20.md) antes de apresentar as métricas.
+
+Treino e inferência usam `aiot/features.py`: última leitura, média, desvio, máximo e tendência de uma janela temporal causal de 55 minutos simulados (12 pontos a cada 5 minutos), com temperatura do compressor compensada pelo ambiente e tendências por hora. Ausências são preenchidas causalmente e outliers limitados a faixas físicas amplas. Alvos de saúde e tempo até a falha existem somente no dataset. O simulador não envia desgaste ou rótulos para a IA.
 
 Equipamentos são separados em treino (60%), validação (20%) e teste (20%). Cada conjunto usa até 50 mil amostras para o ajuste/avaliação, preservando o dataset massivo. Dois ExtraTreesRegressor são comparados à média do treino. A versão só entra em uso se ambos vencerem a baseline em MAE de validação e MAE/RMSE de teste. A troca do artefato é atômica; a inferência recarrega sem reiniciar.
 

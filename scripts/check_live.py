@@ -8,6 +8,7 @@ import aio_pika
 from websockets.asyncio.client import connect
 from aiot.config import secrets
 from aiot.bus import Bus
+from aiot.predictive import limit_checks
 
 
 async def main(mode='live'):
@@ -40,26 +41,35 @@ async def main(mode='live'):
             return
         ticket = (await http.post('/api/ws-ticket', headers=headers)).json()['ticket']
         original_rule = (await get('rules'))[0]
-        async with connect('ws://frontend:8080/api/ws?ticket=' + ticket) as ws:
+        # O ensaio fica aguardando o HTTP/LLM enquanto a telemetria continua.
+        # A fila padrão de 16 frames bloquearia leitura de ping/pong nesse período.
+        async with connect('ws://frontend:8080/api/ws?ticket=' + ticket, max_queue=None, ping_timeout=60) as ws:
             snapshot = json.loads(await ws.recv())
             assert snapshot['type'] == 'snapshot'
-            rule = {'enabled': True, 'on_above': 5, 'off_below': 2}
-            (await http.put('/api/rules/water_cooling', headers=headers, json=rule)).raise_for_status()
-            await command('cooling', 'set', on=False)
-            end = time.monotonic() + 40
-            ready = None
-            while time.monotonic() < end:
-                event = json.loads(await asyncio.wait_for(ws.recv(), 20))
-                if event['type'] == 'prediction' and event['payload']['status'] == 'ready':
-                    ready = event['payload']
-                    break
-            assert ready, 'Inferência não carregou o modelo ou regra não ligou o compressor'
-            print('Regra automática e carregamento do modelo sem reinício: OK', flush=True)
-            print('Previsão saudável:', json.dumps(ready), flush=True)
-            await command('compressor_01', 'inject_fault')
-            opened = False
-            end = time.monotonic() + 240
             try:
+                rule = {'enabled': True, 'on_above': 5, 'off_below': 2}
+                (await http.put('/api/rules/water_cooling', headers=headers, json=rule)).raise_for_status()
+                await command('compressor_01', 'reset_fault')
+                await command('cooling', 'set', on=False)
+                end = time.monotonic() + 90
+                ready = None
+                normal_ready = 0
+                while time.monotonic() < end:
+                    event = json.loads(await asyncio.wait_for(ws.recv(), 20))
+                    if event['type'] == 'prediction' and event['payload']['status'] == 'ready':
+                        ready = event['payload']
+                        assert ready['health'] >= 90 and not any(limit_checks(ready).values()), ready
+                        assert ready['rul_hours'] is None and 'rul_interval' not in ready, ready
+                        normal_ready += 1
+                        if normal_ready >= 12 and not any(row['active'] for row in await get('alerts')):
+                            break
+                assert ready and normal_ready >= 12, 'Inferência não carregou o modelo ou regra não ligou o compressor'
+                assert not any(row['active'] for row in await get('alerts')), 'Alertas não foram limpos na condição saudável'
+                print('Regra automática e carregamento do modelo sem reinício: OK', flush=True)
+                print('Previsão saudável:', json.dumps(ready), flush=True)
+                await command('compressor_01', 'inject_fault')
+                opened = False
+                end = time.monotonic() + 240
                 while time.monotonic() < end:
                     event = json.loads(await asyncio.wait_for(ws.recv(), 20))
                     if event['type'] == 'alert' and event['payload']['active']:
@@ -68,6 +78,17 @@ async def main(mode='live'):
                 assert opened, 'A falha não produziu alerta preditivo'
                 assert any(row['active'] for row in await get('alerts'))
                 print('Falha → medições → regressão → alerta persistido e WebSocket: OK', flush=True)
+                rul_points = []
+                end = time.monotonic() + 120
+                while time.monotonic() < end and len(rul_points) < 8:
+                    event = json.loads(await asyncio.wait_for(ws.recv(), 20))
+                    data = event.get('payload', {})
+                    if event['type'] == 'prediction' and data.get('status') == 'ready' and data.get('rul_hours') is not None:
+                        assert data.get('rul_unit') == 'simulated_operating_hours', data
+                        rul_points.append(data['rul_hours'])
+                assert len(rul_points) == 8, 'RUL permaneceu inconclusiva durante toda a falha'
+                assert sum(rul_points[:3]) > sum(rul_points[-3:]), 'RUL não acompanhou a degradação'
+                print('RUL numérica durante falha (h de operação simuladas):', json.dumps(rul_points), flush=True)
                 async with http.stream('POST', '/api/assistant', headers=headers, json={'question': 'Qual equipamento está com alerta e o que significa? Responda em duas frases.'}) as response:
                     response.raise_for_status()
                     chunks = []

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, defineAsyncComponent } from 'vue'
-import { court, fresh, canOperate, isAdmin, initialize, signIn, logout, request, command, subscribe, deviceState } from '@/services/court'
+import { court, fresh, predictionFresh, canOperate, isAdmin, initialize, signIn, logout, request, command, subscribe, deviceState, rulText, rulIntervalText } from '@/services/court'
 import type {Device, Job, Model, Alert, Event} from '@/services/court'
 import DataChart from '@/components/DataChart.vue'
 import HighlightChart from '@/components/HighlightChart.vue'
@@ -14,6 +14,7 @@ const password = ref('')
 const busy = ref(false)
 const error = ref('')
 const notice = ref('')
+const pendingCommands = new Map<string, number>()
 const selectedSensor = ref('ambient_temperature')
 const historyRange = ref('-1h')
 const historical = ref<{time: string; value: number}[]>([])
@@ -30,14 +31,15 @@ const links = ref<{name: string; url: string}[]>([])
 const selectedDataset = ref('')
 const deviceForm = ref<Device>({id: '', name: '', kind: 'sensor', unit: '', config: {}, enabled: true})
 const rule = ref({enabled: true, on_above: 16, off_below: 10})
-const lab = ref({equipment_count: 30, sensors_per_type: 1, days: 60, interval_minutes: 5, failure_percent: 65, failure_modes: ['bearing', 'overheating', 'imbalance'], noise: .6, missing_percent: 1, outlier_percent: .5, seed: 42})
+const lab = ref({equipment_count: 100, sensors_per_type: 1, days: 60, interval_minutes: 5, failure_percent: 65, failure_modes: ['bearing', 'overheating', 'imbalance'], noise: .6, missing_percent: 1, outlier_percent: .5, seed: 42})
 const labReadings = computed(() => Math.floor(lab.value.equipment_count * lab.value.days * 1440 / lab.value.interval_minutes) * 3 * lab.value.sensors_per_type)
 const question = ref('')
 const chat = ref<{role: string; text: string}[]>([])
 const chatBusy = ref(false)
 const chatStatus = ref('')
 let chatAbort: AbortController | undefined
-const activeModel = computed(() => models.value[0])
+const activeModel = computed(() => models.value.find(model => model.active) || models.value[0])
+const latestModel = computed(() => models.value[0])
 const activeAlerts = computed(() => alerts.value.filter(alert => alert.active))
 const datasets = computed(() => jobs.value.filter(job => job.kind === 'generate' && job.status === 'completed'))
 const sensors = computed(() => court.devices.filter(device => device.kind === 'sensor' && device.enabled))
@@ -49,7 +51,7 @@ const nav = computed(() => [
 ])
 const pageTitle = computed(() => nav.value.find(item => item.id === page.value)?.name)
 const roleLabel = computed(() => ({viewer: 'Visualizador', operator: 'Operador', admin: 'Administrador'}[court.user?.role || 'viewer']))
-const insightStatus = computed(() => ({no_model: 'Gere os dados e treine os modelos.', warming_up: 'Coletando a janela inicial de leituras.', equipment_off: 'Compressor desligado; previsão suspensa.', ready: 'Inferência em tempo real'}[court.prediction?.status || 'no_model']))
+const insightStatus = computed(() => ({no_model: 'Gere os dados e treine os modelos.', warming_up: 'Coletando a janela inicial de leituras.', equipment_off: 'Compressor desligado; previsão suspensa.', incompatible_model: 'Gere e treine um dataset da dinâmica atual.', incompatible_sampling: 'A cadência do dispositivo não corresponde ao modelo.', ready: 'Inferência em tempo real'}[court.prediction?.status || 'no_model']))
 const statusLabels: Record<string, string> = {normal: 'Normal', warning: 'Atenção', critical: 'Crítico', no_data: 'Sem dados'}
 const jobLabels: Record<string, string> = {queued: 'Na fila', running: 'Em execução', completed: 'Concluído', failed: 'Falhou'}
 
@@ -76,7 +78,20 @@ async function loadAdmin() {
   if (rows[0]) rule.value = {...rows[0].config, enabled: rows[0].enabled}
 }
 async function send(identifier: string, action: string, on?: boolean) {
-  await attempt(async () => {const sent = await command(identifier, action, on); notice.value = `Comando enviado (${sent.command_id.slice(0, 8)}). Aguardando confirmação do simulador.`})
+  await attempt(async () => {
+    const sent = await command(identifier, action, on)
+    pendingCommands.set(sent.command_id, Date.now())
+    notice.value = `Comando enviado (${sent.command_id.slice(0, 8)}). Aguardando confirmação do simulador.`
+    const acknowledgement = court.recent.find(event => event.type === 'ack' && event.correlation_id === sent.command_id)
+    if (acknowledgement) confirmCommand(acknowledgement)
+  })
+}
+function confirmCommand(event: Event) {
+  for (const [id, sent] of pendingCommands) if (Date.now() - sent > 60_000) pendingCommands.delete(id)
+  if (!event.correlation_id || !pendingCommands.has(event.correlation_id) || !event.payload.executed) return
+  pendingCommands.delete(event.correlation_id)
+  const name = court.devices.find(device => device.id === event.device_id)?.name || event.device_id
+  notice.value = `Comando confirmado: ${name}.`
 }
 async function generate() {await attempt(async () => {await request('/lab/generate', {method: 'POST', body: JSON.stringify(lab.value)}); await loadCommon()}, 'Geração enfileirada. Acompanhe o progresso abaixo.')}
 async function train() {await attempt(async () => {await request('/models/train', {method: 'POST', body: JSON.stringify({dataset_id: selectedDataset.value})}); await loadCommon()}, 'Treinamento enfileirado.')}
@@ -118,7 +133,7 @@ async function ask() {
 }
 
 const unsubscribe = subscribe((event: Event) => {
-  if (event.type === 'ack' && event.payload.executed) notice.value = `Comando confirmado por ${event.device_id}.`
+  if (event.type === 'ack') confirmCommand(event)
   if (event.type === 'job') {
     const job = jobs.value.find(job => job.id === event.payload.job_id)
     if (job) {job.progress = Number(event.payload.progress); job.status = String(event.payload.status)}
@@ -138,7 +153,7 @@ watch(page, async value => {
 })
 watch(() => court.user, async user => {
   if (user) await attempt(async () => {await loadCommon(); await loadHighlights()})
-  else {chatAbort?.abort(); chat.value = []; page.value = 'dashboard'; jobs.value = []; models.value = []; alerts.value = []}
+  else {chatAbort?.abort(); pendingCommands.clear(); chat.value = []; page.value = 'dashboard'; jobs.value = []; models.value = []; alerts.value = []}
 })
 let timer: ReturnType<typeof setInterval>
 let poll: ReturnType<typeof setInterval>
@@ -182,7 +197,7 @@ onUnmounted(() => {clearInterval(timer); clearInterval(poll); unsubscribe(); cha
         <div class="summary-grid">
           <article class="panel"><span class="eyebrow">AMBIENTE</span><h2>{{number(court.telemetry?.sensors.ambient_temperature)}} °C</h2><p>Temperatura da quadra</p></article>
           <article class="panel"><span class="eyebrow">BEBEDOURO</span><h2>{{number(court.telemetry?.sensors.water_temperature)}} °C</h2><p>Temperatura da água</p></article>
-          <article class="panel"><span class="eyebrow">COMPRESSOR</span><h2>{{court.prediction?.status === 'ready' && fresh ? number(court.prediction.health) + '/100' : '—'}}</h2><p>Saúde prevista pela IA</p></article>
+          <article class="panel"><span class="eyebrow">COMPRESSOR</span><h2>{{court.prediction?.status === 'ready' && predictionFresh ? number(court.prediction.health, 0) + '/100' : '—'}}</h2><p>Saúde prevista pela IA</p></article>
           <article class="panel"><span class="eyebrow">ALERTAS</span><h2>{{activeAlerts.length}}</h2><p>Alertas preditivos ativos</p></article>
         </div>
         <div class="two-columns">
@@ -218,12 +233,12 @@ onUnmounted(() => {clearInterval(timer); clearInterval(poll); unsubscribe(); cha
 
       <template v-if="page === 'training'">
         <section class="panel"><h2>Treinar saúde e vida útil restante</h2><p>A divisão usa equipamentos distintos em treino, validação e teste. Uma versão só entra em uso se ambos os regressores superarem a previsão da média.</p><div class="button-row"><select v-model="selectedDataset"><option disabled value="">Selecione um dataset concluído</option><option v-for="dataset in datasets" :key="dataset.id" :value="dataset.id">{{dataset.id.slice(0, 8)}} · {{number(dataset.result.readings, 0)}} leituras</option></select><button :disabled="!isAdmin || busy || !selectedDataset" @click="train">Treinar dois modelos</button><button class="secondary" @click="attempt(loadCommon)">Atualizar versões</button></div><article class="job" v-for="job in jobs.filter(job => job.kind === 'train')" :key="job.id"><div class="section-heading"><code>{{job.id.slice(0, 8)}}</code><span>{{jobLabels[job.status]}} · {{job.progress}}%</span></div><progress :value="job.progress" max="100"></progress><p v-if="job.result.error" class="error">{{job.result.error}}</p></article></section>
-        <template v-if="activeModel"><section class="panel"><h2>Versão {{activeModel.id.slice(0, 8)}}</h2><p>{{activeModel.active ? 'Em uso na inferência' : 'Não ativada'}} · {{time(activeModel.timestamp)}}</p><p>Equipamentos por conjunto: treino {{activeModel.metrics.split.train?.length}}, validação {{activeModel.metrics.split.validation?.length}}, teste {{activeModel.metrics.split.test?.length}}.</p></section><section class="panel" v-for="(metric, name) in activeModel.metrics.metrics" :key="name"><h2>{{name === 'health' ? 'Índice de saúde (0–100)' : 'Vida útil restante (horas)'}}</h2><span class="tag" :class="metric.beats_baseline ? 'normal' : 'critical'">{{metric.beats_baseline ? 'Superou a base simples' : 'Não superou a base simples'}}</span><table><thead><tr><th>Conjunto</th><th>MAE</th><th>RMSE</th><th>R²</th></tr></thead><tbody><tr><td>Teste</td><td>{{number(metric.test.mae, 3)}}</td><td>{{number(metric.test.rmse, 3)}}</td><td>{{number(metric.test.r2, 3)}}</td></tr><tr><td>Validação</td><td>{{number(metric.validation.mae, 3)}}</td><td>{{number(metric.validation.rmse, 3)}}</td><td>{{number(metric.validation.r2, 3)}}</td></tr><tr><td>Base simples (média)</td><td>{{number(metric.baseline.mae, 3)}}</td><td>{{number(metric.baseline.rmse, 3)}}</td><td>{{number(metric.baseline.r2, 3)}}</td></tr></tbody></table><div class="two-columns"><div><h3>Previsto contra real</h3><ModelChart :metrics="metric" /></div><div><h3>Importância dos atributos</h3><ModelChart :metrics="metric" importance /></div></div></section></template><section v-else class="panel empty">Gere um dataset no Laboratório e execute o primeiro treinamento.</section>
+        <section v-if="latestModel && activeModel && latestModel.id !== activeModel.id" class="panel"><h2>Último treino: {{latestModel.id.slice(0, 8)}}</h2><p>Esta versão não foi ativada. A inferência continua usando {{activeModel.id.slice(0, 8)}}; as métricas abaixo correspondem à versão em uso.</p></section><template v-if="activeModel"><section class="panel"><h2>Versão {{activeModel.id.slice(0, 8)}}</h2><p>{{activeModel.active ? 'Em uso na inferência' : 'Não ativada'}} · {{time(activeModel.timestamp)}}</p><p>Equipamentos por conjunto: treino {{activeModel.metrics.split.train?.length}}, validação {{activeModel.metrics.split.validation?.length}}, teste {{activeModel.metrics.split.test?.length}}.</p></section><section class="panel" v-for="(metric, name) in activeModel.metrics.metrics" :key="name"><h2>{{name === 'health' ? 'Índice de saúde (0–100)' : 'Vida útil restante (horas de operação simuladas)'}}</h2><p v-if="metric.scope === 'degradation_observed'">Modelo avaliado nas janelas com degradação observável. Em condição saudável, o prazo é inconclusivo.</p><p v-if="metric.samples">Amostras: treino {{number(metric.samples.train, 0)}}, validação {{number(metric.samples.validation, 0)}}, teste {{number(metric.samples.test, 0)}}.</p><span class="tag" :class="metric.beats_baseline ? 'normal' : 'critical'">{{metric.beats_baseline ? 'Superou a base simples' : 'Não superou a base simples'}}</span><table><thead><tr><th>Conjunto</th><th>MAE</th><th>RMSE</th><th>R²</th></tr></thead><tbody><tr><td>Teste</td><td>{{number(metric.test.mae, 3)}}</td><td>{{number(metric.test.rmse, 3)}}</td><td>{{number(metric.test.r2, 3)}}</td></tr><tr><td>Validação</td><td>{{number(metric.validation.mae, 3)}}</td><td>{{number(metric.validation.rmse, 3)}}</td><td>{{number(metric.validation.r2, 3)}}</td></tr><tr><td>Base simples (média)</td><td>{{number(metric.baseline.mae, 3)}}</td><td>{{number(metric.baseline.rmse, 3)}}</td><td>{{number(metric.baseline.r2, 3)}}</td></tr></tbody></table><div class="two-columns"><div><h3>Previsto contra real</h3><ModelChart :metrics="metric" /></div><div><h3>Importância dos atributos</h3><ModelChart :metrics="metric" importance /></div></div></section></template><section v-else class="panel empty">Gere um dataset no Laboratório e execute o primeiro treinamento.</section>
       </template>
 
       <template v-if="page === 'insights'">
-        <section class="panel"><div class="section-heading"><div><span class="eyebrow">MANUTENÇÃO PREDITIVA</span><h2>Compressor do bebedouro</h2><p>{{insightStatus}}</p></div><span class="tag" :class="deviceState('compressor_01')">{{statusLabels[deviceState('compressor_01')]}}</span></div><div class="summary-grid"><div><span>Saúde</span><h2>{{fresh && court.prediction?.status === 'ready' ? number(court.prediction.health) + '/100' : '—'}}</h2></div><div><span>Vida útil restante</span><h2>{{fresh && court.prediction?.status === 'ready' ? number(court.prediction.rul_hours) + ' h' : '—'}}</h2></div><div><span>Versão em uso</span><p><code>{{court.prediction?.version?.slice(0, 8) || 'Sem modelo'}}</code></p></div><div><span>Última previsão</span><p>{{court.prediction?.source_timestamp ? time(court.prediction.source_timestamp) : '—'}}</p></div></div><h3>Falha simulada</h3><p>A injeção acelera o desgaste físico no simulador. A IA recebe somente as medições do equipamento.</p><div class="button-row"><button :disabled="!canOperate || busy" @click="send('compressor_01', 'inject_fault')">Injetar falha</button><button class="secondary" :disabled="!canOperate || busy" @click="send('compressor_01', 'reset_fault')">Restaurar equipamento</button></div></section>
-        <div class="two-columns"><section class="panel"><h2>Tendência de saúde</h2><DataChart :points="court.history.health || []" label="0–100" /></section><section class="panel"><h2>Vida útil restante</h2><DataChart :points="court.history.rul_hours || []" label="horas" /></section></div>
+        <section class="panel"><div class="section-heading"><div><span class="eyebrow">MANUTENÇÃO PREDITIVA</span><h2>Compressor do bebedouro</h2><p>{{insightStatus}}</p></div><span class="tag" :class="deviceState('compressor_01')">{{statusLabels[deviceState('compressor_01')]}}</span></div><div class="summary-grid"><div><span>Saúde estimada</span><h2>{{predictionFresh && court.prediction?.status === 'ready' ? number(court.prediction.health, 0) + '/100' : '—'}}</h2></div><div><span>Vida útil restante</span><h2>{{rulText}}</h2></div><div><span>Versão em uso</span><p><code>{{court.prediction?.version?.slice(0, 8) || 'Sem modelo'}}</code></p></div><div><span>Última previsão</span><p>{{court.prediction?.source_timestamp ? time(court.prediction.source_timestamp) : '—'}}</p></div></div><p v-if="predictionFresh && court.prediction?.status === 'ready'">{{court.prediction.rul_reason}} {{rulIntervalText}}</p><p>Saúde é uma estimativa da condição atual e pode variar com as leituras. A RUL só recebe um valor pontual quando a incerteza permite; não é uma contagem regressiva. Cada leitura a cada 2 segundos representa 5 minutos simulados. A RUL indica horas de funcionamento se a degradação atual continuar; as paradas não consomem essas horas. Faixas medidas em dados sintéticos, sem validação em compressor real.</p><h3>Falha simulada</h3><p>A degradação avança enquanto o compressor opera. O ciclo automático pode desligá-lo e pausar a previsão. A RUL pontual pode aparecer apenas na fase final; a IA recebe somente as medições e o relógio simulado, sem os rótulos verdadeiros.</p><div class="button-row"><button :disabled="!canOperate || busy" @click="send('compressor_01', 'inject_fault')">Injetar falha</button><button class="secondary" :disabled="!canOperate || busy" @click="send('compressor_01', 'reset_fault')">Restaurar equipamento</button></div></section>
+        <div class="two-columns"><section class="panel"><h2>Tendência de saúde</h2><DataChart :points="court.history.health || []" label="0–100" /></section><section class="panel"><h2>RUL estimada · experimental</h2><p>Períodos sem prazo confiável ou com compressor desligado ficam sem linha.</p><DataChart :points="court.history.rul_hours || []" label="h simuladas" /></section></div>
         <div class="two-columns"><section class="panel"><h2>Tendência de vibração</h2><DataChart :points="court.history.compressor_vibration || []" label="mm/s" /></section><section class="panel"><h2>Alertas preditivos</h2><article v-for="alert in alerts" :key="alert.id" class="alert-item"><span class="tag" :class="alert.active ? 'critical' : 'normal'">{{alert.active ? 'Ativo' : 'Resolvido'}}</span><p>{{alert.message}}</p></article><p v-if="!alerts.length" class="empty">Nenhum alerta registrado.</p><small>Histerese: 3 previsões críticas para abrir; 10 normais para limpar.</small></section></div>
       </template>
 

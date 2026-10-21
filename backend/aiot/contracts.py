@@ -24,7 +24,7 @@ class Event(BaseModel):
         if self.timestamp.tzinfo is None:
             raise ValueError('Timestamp deve informar fuso horário.')
         if self.type == 'telemetry':
-            if set(self.payload) != {'court_id', 'sensors', 'actuators'}:
+            if set(self.payload) not in [{'court_id', 'sensors', 'actuators'}, {'court_id', 'sensors', 'actuators', 'simulation'}]:
                 raise ValueError('Telemetria só pode conter quadra, sensores e atuadores, sem rótulos de treino.')
             readings = self.payload['sensors']
             allowed = {'ambient_temperature', 'humidity', 'luminosity', 'water_temperature', 'compressor_temperature', 'compressor_current', 'compressor_vibration'}
@@ -35,6 +35,12 @@ class Event(BaseModel):
             states = self.payload['actuators']
             if not isinstance(states, dict) or set(states) != {'cooling', 'floodlights'} or any(not isinstance(value, bool) for value in states.values()):
                 raise ValueError('Estados dos atuadores inválidos.')
+            if 'simulation' in self.payload:
+                clock = self.payload['simulation']
+                if (not isinstance(clock, dict) or set(clock) != {'step_hours', 'elapsed_hours'} or
+                        any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v < 0 for v in clock.values()) or
+                        clock['step_hours'] <= 0):
+                    raise ValueError('Relógio simulado inválido; não incluir rótulos ou desgaste.')
         if self.type == 'highlight':
             if self.payload.get('player') not in ['A', 'B'] or self.payload.get('event_type') not in ['highlight', 'ace', 'winner', 'error']:
                 raise ValueError('Highlight inválido.')
@@ -50,7 +56,7 @@ class Command(BaseModel):
 
 class LabConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    equipment_count: int = Field(default=30, ge=10, le=200)
+    equipment_count: int = Field(default=100, ge=10, le=200)
     sensors_per_type: int = Field(default=1, ge=1, le=4)
     days: int = Field(default=60, ge=7, le=365)
     interval_minutes: int = Field(default=5, ge=1, le=60)

@@ -6,7 +6,8 @@ from sqlalchemy import select
 from .bus import Bus
 from .contracts import Event, LabConfig
 from .database import session, Job, ModelVersion, Rule, Alert, audit
-from .features import CHANNELS, WINDOW
+from .features import INPUT_CHANNELS, WINDOW
+from .equipment import STEP_HOURS
 from .ml import Predictor, generate, train, activate
 from .predictive import limit_checks, prediction_facts
 from . import storage
@@ -39,6 +40,7 @@ class Workers:
     def __init__(self, bus):
         self.bus = bus
         self.histories = defaultdict(lambda: deque(maxlen=WINDOW))
+        self.last_observed = {}
         self.predictor = Predictor()
         self.hysteresis = {}
         self.seen = deque(maxlen=5000)
@@ -58,8 +60,16 @@ class Workers:
             return
         self.seen.append(event.id)
         history = self.histories[event.device_id]
-        if event.payload['actuators']['cooling']:
-            history.append([event.payload['sensors'][name] for name in CHANNELS])
+        previous = self.last_observed.get(event.device_id)
+        if previous is not None and (event.timestamp - previous).total_seconds() > 10:
+            history.clear()
+        self.last_observed[event.device_id] = event.timestamp
+        period = event.payload.get('simulation', {}).get('step_hours')
+        if period is not None and abs(period - STEP_HOURS) > 1e-6:
+            history.clear()
+            prediction = {'status': 'incompatible_sampling', 'version': self.predictor.version}
+        elif event.payload['actuators']['cooling']:
+            history.append([event.payload['sensors'][name] for name in INPUT_CHANNELS])
             prediction = await asyncio.to_thread(self.predictor.predict, list(history))
         else:
             history.clear()

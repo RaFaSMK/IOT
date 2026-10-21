@@ -12,6 +12,8 @@ Na raiz, execute `docker compose up --build -d` e abra **http://localhost:8080**
 
 Consulte [arquitetura, execução, segurança, testes e roteiro completo do segundo bimestre](docs/implementacao-2bim.md). O [diagnóstico da base original](docs/segundo-bimestre-analise.md) registra o estado anterior à implementação e suas propostas iniciais.
 
+**RUL e tempo simulado:** a [validação da dinâmica v2](docs/validacao-rul-v2-2026-10-20.md) descreve os novos dados, modelos e limites. Cada leitura a cada 2 segundos representa 5 minutos simulados. A RUL estima horas de operação simuladas durante degradação observável; em condição saudável ou com incerteza ampla, fica inconclusiva. Os modelos anteriores foram preservados como baseline histórica.
+
 Para retomar após a formatação, leia [CONTEXTO_PARA_RETOMAR.md](CONTEXTO_PARA_RETOMAR.md). O [registro de validação](docs/validacao-2bim.md) contém os testes executados, métricas reais e capturas da interface. O [enunciado da atividade](docs/2Bim.MD) também está salvo no projeto.
 
 ### Arquitetura AIoT atual
@@ -53,11 +55,11 @@ Mosquitto atende a borda IoT; RabbitMQ distribui os eventos internos. O LLM rece
 2. Demonstrar os três papéis, sensores, Dashboard, histórico, Swagger e cadastro.
 3. Em Mensageria, parar `writer`, mostrar acúmulo e retomar; inspecionar a DLQ sem remover mensagens.
 4. Comandar refletores e mostrar a regra automática da refrigeração.
-5. Gerar o dataset padrão (1.555.200 leituras), treinar saúde/RUL e explicar split, métricas e baseline.
+5. Gerar o dataset padrão (5.184.000 leituras), treinar saúde/RUL e explicar split, métricas e baseline.
 6. Injetar falha, observar Insights e 3D, perguntar ao Assistente e restaurar o equipamento.
 7. Parar o simulador, mostrar a cena sem dados e retomá-lo. Ao terminar, usar `docker compose stop`.
 
-O [roteiro completo](docs/implementacao-2bim.md) detalha comandos e resultados. As previsões são demonstrações sintéticas; a RUL ainda tem erro alto e não representa um prazo calibrado para falha de um compressor real.
+O [roteiro completo](docs/implementacao-2bim.md) detalha comandos e resultados. As previsões são demonstrações sintéticas; a RUL usa horas de operação simuladas e não representa um prazo calibrado para falha de um compressor real. O prazo pontual pode aparecer apenas na fase final da degradação; conferir a faixa experimental e o relatório de validação.
 
 ---
 

@@ -2,15 +2,17 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import {court, fresh, canOperate, deviceState} from '@/services/court'
+import {court, fresh, predictionFresh, canOperate, deviceState, rulText, rulIntervalText} from '@/services/court'
 import DataChart from './DataChart.vue'
 const emit = defineEmits<{command: [identifier: string, action: string, on?: boolean]}>()
 const container = ref<HTMLDivElement>()
 const selected = ref('compressor_01')
 const failure = ref('')
 const device = computed(() => court.devices.find(item => item.id === selected.value))
-const chartId = computed(() => selected.value === 'compressor_01' || selected.value === 'cooling' ? 'compressor_vibration' : selected.value)
+const chartId = computed(() => selected.value === 'compressor_01' ? 'compressor_vibration' : selected.value)
 const value = computed(() => {
+  if (selected.value === 'simulator') return fresh.value ? 'Transmitindo' : 'Sem dados'
+  if (selected.value === 'highlight_button') return (court.history.highlight_button?.at(-1)?.value ?? 0) + ' nesta sessão'
   const measured = court.telemetry?.sensors[selected.value]
   if (measured !== undefined) return measured.toLocaleString('pt-BR', {maximumFractionDigits: 2}) + ' ' + (device.value?.unit || '')
   const state = court.telemetry?.actuators[selected.value]
@@ -19,8 +21,8 @@ const value = computed(() => {
 })
 const positions: Record<string, [number, number, number]> = {
   ambient_temperature: [-6, 1.7, -6], humidity: [-5, 1.7, -6], luminosity: [-4, 1.7, -6],
-  water_temperature: [7.1, 2.2, 2.6], compressor_temperature: [8.8, .8, 2.5], compressor_current: [8.8, .8, 3.3], compressor_vibration: [8.8, .8, 4.1],
-  compressor_01: [7.4, .7, 3.4], cooling: [7.4, 1.7, 3.4], floodlights: [-5, 4.8, 5.6], highlight_button: [1, 1.2, 5.5], simulator: [-7, .8, -6],
+  water_temperature: [7.1, 2.2, 2.6], compressor_temperature: [7.4, .8, 1.85], compressor_current: [8.85, .8, 3.4], compressor_vibration: [7.4, .8, 4.95],
+  compressor_01: [7.4, .7, 3.4], cooling: [7.4, 1.7, 3.4], floodlights: [-5, 4.8, 5.6], highlight_button: [5, 1.2, 0], simulator: [-7, .8, -6],
 }
 const colors: Record<string, number> = {normal: 0x38d9ae, warning: 0xf2bd65, critical: 0xf87171, no_data: 0x62748a}
 let dispose = () => {}
@@ -57,14 +59,14 @@ onMounted(() => {
     function box(w: number,h: number,d: number,x: number,y: number,z: number,color: number, parent: THREE.Object3D = scene) {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material(color)); mesh.position.set(x,y,z); mesh.castShadow = true; mesh.receiveShadow = true; parent.add(mesh); return mesh
     }
-    function label(text: string, x: number, y: number, z: number) {
-      const canvas = document.createElement('canvas'); canvas.width = 512; canvas.height = 80
+    function label(text: string, x: number, y: number, z: number, compact = false) {
+      const canvas = document.createElement('canvas'); canvas.width = compact ? 256 : 512; canvas.height = 80
       const context = canvas.getContext('2d')!
-      context.fillStyle = '#0c1724dd'; context.fillRect(0,0,512,80)
-      context.font = '28px sans-serif'; context.textAlign = 'center'; context.fillStyle = '#e2e8f0'; context.fillText(text,256,50)
+      context.fillStyle = '#0c1724dd'; context.fillRect(0,0,canvas.width,80)
+      context.font = '28px sans-serif'; context.textAlign = 'center'; context.fillStyle = '#e2e8f0'; context.fillText(text,canvas.width / 2,50)
       const texture = new THREE.CanvasTexture(canvas); textures.push(texture)
       const m = new THREE.SpriteMaterial({map: texture, depthTest: false}); materials.push(m)
-      const sprite = new THREE.Sprite(m); sprite.position.set(x,y,z); sprite.scale.set(3.2,.5,1); scene.add(sprite)
+      const sprite = new THREE.Sprite(m); sprite.position.set(x,y,z); sprite.scale.set(compact ? 1.6 : 3.2,.5,1); scene.add(sprite)
     }
     box(30,.2,24,0,-.18,0,0x1a3534)
     box(9,.15,17,0,0,0,0xcab98f)
@@ -89,13 +91,21 @@ onMounted(() => {
     lamp.userData.device = 'floodlights'; objects.push(lamp)
     box(.16,4.7,.16,-5,2.35,5.6,0x526577)
     const flood = new THREE.PointLight(0xffedc0,0,25,1.5); flood.position.set(-5,4.6,5.6); scene.add(flood)
+    // Face do botão voltada para fora da lateral da quadra, na direção +X.
+    const [buttonX, buttonY, buttonZ] = positions.highlight_button!
+    const buttonHousing = box(.32,.56,.42,buttonX - .18,buttonY,buttonZ,0x253b4b)
+    buttonHousing.userData.device = 'highlight_button'; objects.push(buttonHousing)
     for (const [id, position] of Object.entries(positions)) {
-      const marker = new THREE.Mesh(new THREE.SphereGeometry(.17,10,8),material(0x62748a)); marker.position.set(...position); marker.userData.device = id; scene.add(marker); markers[id] = marker; objects.push(marker)
+      const geometry = id === 'highlight_button' ? new THREE.CylinderGeometry(.14,.14,.12,24) : new THREE.SphereGeometry(.17,10,8)
+      const marker = new THREE.Mesh(geometry,material(0x62748a)); marker.position.set(...position)
+      if (id === 'highlight_button') marker.rotation.z = -Math.PI / 2
+      marker.userData.device = id; scene.add(marker); markers[id] = marker; objects.push(marker)
     }
+    const sensorLabels: Record<string, string> = {compressor_temperature: 'Temperatura', compressor_current: 'Corrente', compressor_vibration: 'Vibração'}
     for (const [id, position] of Object.entries(positions)) {
       if (['compressor_01','cooling','floodlights','water_temperature','simulator'].includes(id)) continue
-      const title = court.devices.find(item => item.id === id)?.name || id
-      label(title,position[0],position[1] + .7,position[2])
+      const title = sensorLabels[id] || court.devices.find(item => item.id === id)?.name || id
+      label(title,position[0],position[1] + .7,position[2],id in sensorLabels)
     }
     // Nuvens: um segundo elemento ambiental cuja opacidade acompanha a umidade.
     const cloudMaterial = new THREE.MeshStandardMaterial({color:0xc7d8e5,transparent:true,opacity:0}); materials.push(cloudMaterial)
@@ -149,7 +159,7 @@ onUnmounted(() => dispose())
 <template>
   <section class="twin-layout">
     <div class="scene-panel"><div class="scene-label"><strong>Quadra ao vivo</strong><span>{{fresh ? 'Clique nos equipamentos para inspecionar' : 'Sem dados · animações pausadas'}}</span></div><p v-if="failure" role="alert">{{failure}}</p><div ref="container" class="scene-container"></div><div class="legend"><span class="normal">● Normal</span><span class="warning">● Atenção</span><span class="critical">● Crítico</span><span>● Sem dados</span></div></div>
-    <aside class="item-panel"><label>Inspecionar<select v-model="selected"><option v-for="item in court.devices.filter(item => positions[item.id])" :key="item.id" :value="item.id">{{item.name}}</option></select></label><h2>{{device?.name || selected}}</h2><code>{{selected}}</code><strong class="reading">{{value}}</strong><p>{{fresh ? 'Última leitura recebida' : 'Leitura antiga · sem dados recentes'}}</p><DataChart :points="court.history[chartId] || []" :label="device?.unit" /><h3>Saúde do compressor</h3><p>{{fresh && court.prediction?.status === 'ready' ? court.prediction.health?.toFixed(1) + '/100 · ' + court.prediction.rul_hours?.toFixed(1) + ' h restantes' : 'Previsão indisponível'}}</p><div v-if="canOperate && (selected === 'floodlights' || selected === 'cooling')" class="commands"><button @click="emit('command', selected, 'set', true)">Ligar</button><button @click="emit('command', selected, 'set', false)">Desligar</button><small v-if="selected === 'cooling'">A regra automática pode alterar a refrigeração conforme a temperatura da água.</small></div><button v-if="canOperate && selected === 'highlight_button'" @click="emit('command', selected, 'highlight')">Registrar highlight</button></aside>
+    <aside class="item-panel"><label>Inspecionar<select v-model="selected"><option v-for="item in court.devices.filter(item => positions[item.id])" :key="item.id" :value="item.id">{{item.name}}</option></select></label><h2>{{device?.name || selected}}</h2><code>{{selected}}</code><strong class="reading">{{value}}</strong><p>{{fresh ? 'Última leitura recebida' : 'Leitura antiga · sem dados recentes'}}</p><DataChart :points="court.history[chartId] || []" :label="device?.kind === 'actuator' ? '0 desligado · 1 ligado' : device?.unit" /><h3>Saúde estimada do compressor</h3><p>{{predictionFresh && court.prediction?.status === 'ready' ? court.prediction.health?.toFixed(0) + '/100' : 'Previsão indisponível'}}</p><p>RUL: {{rulText}}</p><p v-if="rulIntervalText">{{rulIntervalText}}</p><div v-if="canOperate && (selected === 'floodlights' || selected === 'cooling')" class="commands"><button @click="emit('command', selected, 'set', true)">Ligar</button><button @click="emit('command', selected, 'set', false)">Desligar</button><small v-if="selected === 'cooling'">A regra automática pode alterar a refrigeração conforme a temperatura da água.</small></div><button v-if="canOperate && selected === 'highlight_button'" @click="emit('command', selected, 'highlight')">Registrar highlight</button></aside>
   </section>
 </template>
 <style scoped>

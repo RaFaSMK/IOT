@@ -29,8 +29,10 @@ def sections(data):
             if checks['health_below_limit']:
                 reasons.append('saúde abaixo de 40')
             if checks['rul_below_limit']:
-                reasons.append('RUL abaixo de 48 horas')
+                reasons.append('RUL abaixo de 48 horas' + (' de operação simuladas' if item.get('rul_unit') == 'simulated_operating_hours' else ''))
             state += ' Limites violados nesta previsão: ' + (', '.join(reasons) or 'nenhum') + '.'
+            if item.get('rul_hours') is None:
+                state += ' RUL inconclusiva: a ausência de alerta por RUL não comprova vida útil suficiente.'
         alert_details.append(f'{identifier}: {state}')
     for alert in data.get('alerts', []):
         if alert['device_id'] not in predictions:
@@ -76,7 +78,7 @@ def sections(data):
                 'MAE/RMSE menores e R² maior indicam melhor desempenho.')
         result['model_' + target] = '\n'.join(paragraphs) or f'Ainda não há métricas de {title} disponíveis.'
         if target == 'rul_hours':
-            result['model_' + target] += ' O treino é sintético, o erro de RUL ainda é alto e não há calibração em compressor real; não use a previsão como prazo preciso de falha.'
+            result['model_' + target] += ' A RUL atual é medida em horas de operação simuladas e avaliada durante degradação observável; o relógio da demonstração avança cinco minutos por leitura a cada dois segundos. Em condição saudável, pode ser inconclusiva. Não há calibração em compressor real; não use a previsão como data de falha ou prazo de relógio real.'
     active = any(item.get('alert_active') or any(item.get('limit_checks', {}).values()) for item in predictions.values())
     result['recommendation'] = (
         'Inspecione o compressor, confira temperatura, corrente e vibração e acompanhe as tendências. '

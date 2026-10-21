@@ -23,6 +23,8 @@ def write(event):
             equipment.field(name, float(value))
         for name, value in event.payload['actuators'].items():
             equipment.field(name, bool(value))
+        for name, value in event.payload.get('simulation', {}).items():
+            equipment.field('simulation_' + name, float(value))
         points.append(equipment)
     elif event.type == 'highlight':
         data = event.payload

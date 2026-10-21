@@ -46,6 +46,12 @@ class PredictiveFactsTests(unittest.TestCase):
         self.assertFalse(any(limit_checks({'health': 40, 'rul_hours': 48}).values()))
         self.assertIn('39.999/100, ABAIXO', prediction_facts({'health': 39.999, 'rul_hours': 300}))
 
+    def test_interval_risk_explains_alert_even_without_point_estimate(self):
+        prediction = {'health': 80, 'rul_hours': None, 'rul_interval': [1, 3], 'rul_unit': 'simulated_operating_hours'}
+        facts = prediction_facts(prediction)
+        self.assertIn('Toda a faixa está abaixo do limite de 48 horas', facts)
+        self.assertIn('horas de operação simuladas', facts)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -48,6 +48,8 @@ docker compose run --rm --no-deps bootstrap cat /secrets/demo-users.txt
 
 Entre como `administrador`. No **Laboratório**, gere o dataset padrão e aguarde a conclusão. Em **Treinamento**, selecione esse dataset, execute o treino e confira que terminou e que a versão foi ativada. Sem uma versão ativa, não haverá as previsões treinadas do compressor. Faça essa etapa antes do dia da apresentação; geração, treino e respostas do LLM dependem do desempenho do notebook.
 
+O padrão atual gera 5.184.000 leituras de 100 equipamentos. A nova dinâmica não usa os datasets antigos: preserve-os como histórico e gere um novo dataset para treinar. A RUL aparece em horas de operação simuladas; em condição saudável fica inconclusiva e durante a falha pode só ganhar prazo pontual na fase final. Consulte [a validação v2](validacao-rul-v2-2026-10-20.md).
+
 Confira Dashboard, quadra 3D, highlights, Mensageria, Treinamento e Assistente. Verifique que as leituras mudam e que há previsões. Teste os refletores, a falha do compressor e o reset conforme [o roteiro completo](implementacao-2bim.md). Apresente as métricas obtidas no próprio notebook.
 
 Para conferir os testes Python:

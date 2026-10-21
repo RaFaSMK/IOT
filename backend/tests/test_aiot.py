@@ -9,18 +9,18 @@ from aiot.contracts import LabConfig, Event
 
 class AIoTTests(unittest.TestCase):
     def test_future_does_not_change_features(self):
-        readings = np.random.default_rng(7).normal(30, 2, (40, 3))
+        readings = np.random.default_rng(7).normal(30, 2, (40, 4))
         readings[4, 0] = np.nan
         original = features(readings)
         readings[30:] = 100
         np.testing.assert_allclose(original[:30 - WINDOW + 1], features(readings)[:30 - WINDOW + 1])
 
     def test_training_and_live_features_match(self):
-        readings = np.random.default_rng(7).normal(30, 2, (40, 3))
+        readings = np.random.default_rng(7).normal(30, 2, (40, 4))
         np.testing.assert_allclose(features(readings)[-1], latest(readings[-WINDOW:])[0])
 
     def test_incomplete_window_has_no_prediction_features(self):
-        self.assertIsNone(latest(np.zeros((WINDOW - 1, 3))))
+        self.assertIsNone(latest(np.zeros((WINDOW - 1, 4))))
 
     def test_hysteresis_requires_consecutive_observations(self):
         state = Hysteresis()
@@ -47,7 +47,7 @@ class AIoTTests(unittest.TestCase):
         for _ in range(60):
             event = court.sample()
         self.assertGreater(event.payload['sensors']['compressor_vibration'], initial + 3)
-        self.assertEqual(set(event.payload), {'court_id', 'sensors', 'actuators'})
+        self.assertEqual(set(event.payload), {'court_id', 'sensors', 'actuators', 'simulation'})
 
     def test_default_lab_reaches_required_volume(self):
         self.assertGreaterEqual(LabConfig().readings, 1_000_000)

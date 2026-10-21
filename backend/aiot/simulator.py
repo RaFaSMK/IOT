@@ -9,6 +9,7 @@ import numpy as np
 import paho.mqtt.client as mqtt
 from .config import credential
 from .contracts import Event, Command
+from .equipment import STEP_HOURS, PUBLISH_SECONDS, NATURAL_RATE, compressor_signals, load_at, ambient_at
 
 log = logging.getLogger(__name__)
 
@@ -23,6 +24,10 @@ class Court:
         self.wear = 0.
         self.fault = False
         self.tick = 0
+        self.offsets = self.rng.normal(0, [.6, .04, .05])
+        self.mode = 'bearing'
+        self.fault_duration = 6.
+        self.fault_rate = 1 / self.fault_duration
 
     def command(self, device, payload):
         command = Command.model_validate(payload)
@@ -34,6 +39,8 @@ class Court:
             if device != 'compressor_01':
                 raise ValueError('Falha só pode ser injetada no compressor.')
             self.fault = command.action == 'inject_fault'
+            if self.fault:
+                self.fault_rate = (1 - self.wear) / self.fault_duration
             if not self.fault:
                 self.wear = 0
         elif command.action in ['pause', 'resume']:
@@ -49,25 +56,24 @@ class Court:
     def sample(self):
         self.tick += 1
         # Ciclo virtual acelerado para a demonstração; não revela desgaste nos dados.
-        hour = (self.tick / 20) % 24
+        hours = self.tick * STEP_HOURS
+        hour = hours % 24
         daylight = max(0, np.sin((hour - 6) * np.pi / 12))
-        ambient = 25 + 8 * daylight + self.rng.normal(0, .25)
+        ambient = float(ambient_at(hours)) + self.rng.normal(0, .25)
         humidity = 72 - 23 * daylight + self.rng.normal(0, 1)
         luminosity = 60000 * daylight + self.rng.uniform(0, 50)
         if self.cooling:
-            self.wear = min(1., self.wear + (.014 if self.fault else .000005))
+            self.wear = min(1., self.wear + STEP_HOURS * (self.fault_rate if self.fault else NATURAL_RATE))
             self.water += .10 + self.wear * .22 - .35
         else:
             self.water += (ambient - self.water) * .018
         self.water = float(np.clip(self.water, 5, ambient))
-        load = .7 + .22 * np.sin(hour * np.pi / 12)
-        current = 1.9 + 1.1 * load + 3.8 * self.wear if self.cooling else 0
-        vibration = .65 + .4 * load + 7.8 * self.wear if self.cooling else 0
-        temperature = ambient + 12 * load + 38 * self.wear if self.cooling else ambient + 1
+        temperature, current, vibration = compressor_signals(ambient, load_at(hours), self.wear, self.cooling, self.mode, self.offsets, self.rng)
         return Event(type='telemetry', device_id='compressor_01', payload={
             'court_id': 'court_01',
-            'sensors': {'ambient_temperature': round(float(ambient), 2), 'humidity': round(float(humidity), 2), 'luminosity': round(float(luminosity), 1), 'water_temperature': round(self.water, 2), 'compressor_temperature': round(float(temperature + self.rng.normal(0, .8)), 2), 'compressor_current': round(float(max(0, current + self.rng.normal(0, .08))), 3), 'compressor_vibration': round(float(max(0, vibration + self.rng.normal(0, .1))), 3)},
+            'sensors': {'ambient_temperature': round(float(ambient), 2), 'humidity': round(float(humidity), 2), 'luminosity': round(float(luminosity), 1), 'water_temperature': round(self.water, 2), 'compressor_temperature': round(float(temperature), 2), 'compressor_current': round(float(current), 3), 'compressor_vibration': round(float(vibration), 3)},
             'actuators': {'cooling': self.cooling, 'floodlights': self.floodlights},
+            'simulation': {'step_hours': STEP_HOURS, 'elapsed_hours': hours},
         })
 
 
@@ -122,7 +128,7 @@ def main():
                 if not court.paused:
                     event = court.sample()
                     client.publish('court/court_01/telemetry/compressor_01', event.model_dump_json(), qos=1).wait_for_publish(timeout=5)
-            time.sleep(2)
+            time.sleep(PUBLISH_SECONDS)
     finally:
         client.disconnect()
         client.loop_stop()

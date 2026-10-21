@@ -1,5 +1,7 @@
 # Checklist do professor — auditoria de 12/10/2026
 
+> **Revisão de 20/10/2026:** as métricas e evidências abaixo são históricas da dinâmica anterior. O estado atual está na [validação RUL v2](validacao-rul-v2-2026-10-20.md): 5.184.000 leituras, nova escala de tempo compartilhada, RUL condicional à degradação e previsão numérica observada na fase final da falha. Não confundir a precisão do novo alvo operacional com uma previsão de calendário real. As alterações atuais integram a publicação na `main`, autorizada pelo usuário; os artefatos treinados permanecem nos volumes locais. A repetição do ensaio de parar o writer foi bloqueada pela aprovação automática; o ensaio offline na máquina de apresentação continua pendente. A exigência de commits dos outros membros foi excluída pelo usuário.
+
 **Conclusão após as correções de 12/10/2026: os requisitos técnicos conferidos estão implementados e os principais fluxos passaram nos testes.** A ressalva factual do Assistente foi corrigida com respostas baseadas em fatos do backend e seleção estruturada pelo Ollama. O README recebeu o diagrama atual e o roteiro resumido. As alterações foram publicadas na branch main do GitHub. O ensaio no notebook ainda depende do usuário; contribuições do grupo ficaram fora desta rodada por decisão expressa dele.
 
 Base: texto completo enviado pelo usuário nesta conversa, com apresentação em **16/11/2026**, e enunciado preservado em [2Bim.MD](2Bim.MD). O diagrama anexado foi tratado como referência; a inspeção considerou os serviços efetivamente usados no Compose.

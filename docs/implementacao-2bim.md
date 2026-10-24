@@ -98,7 +98,7 @@ A cena 3D muda a iluminação ambiente conforme a luminosidade e as nuvens confo
 
 O gerador usa NumPy por equipamento/bloco e salva matrizes com memmap. Limites: dois milhões de amostras e vinte milhões de leituras. A contagem de leituras corresponde aos valores dos três tipos de sensor e suas réplicas configuradas.
 
-Na dinâmica `compressor-v2`, cada publicação a cada 2 segundos representa 5 minutos simulados. A RUL é medida em horas de operação simuladas, supondo continuidade da degradação; não é prazo de relógio real. O regressor de RUL é treinado/avaliado somente na degradação observável. Em condição saudável, o prazo é inconclusivo. Consulte [a validação v2](validacao-rul-v2-2026-10-20.md) antes de apresentar as métricas.
+Na dinâmica `compressor-v2`, cada publicação a cada 2 segundos representa 5 minutos simulados. A RUL é medida em horas de operação simuladas, supondo continuidade da degradação; não é prazo de relógio real. O regressor de RUL é treinado/avaliado somente na degradação observável. Em condição saudável, não há prazo identificado; durante a degradação, estimativas com erro amplo aparecem como baixa confiança. Consulte [a validação v2](validacao-rul-v2-2026-10-20.md) e a [política de exibição atual](validacao-exibicao-rul-2026-10-23.md) antes de apresentar as métricas.
 
 Treino e inferência usam `aiot/features.py`: última leitura, média, desvio, máximo e tendência de uma janela temporal causal de 55 minutos simulados (12 pontos a cada 5 minutos), com temperatura do compressor compensada pelo ambiente e tendências por hora. Ausências são preenchidas causalmente e outliers limitados a faixas físicas amplas. Alvos de saúde e tempo até a falha existem somente no dataset. O simulador não envia desgaste ou rótulos para a IA.
 

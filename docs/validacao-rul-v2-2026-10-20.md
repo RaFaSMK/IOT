@@ -1,5 +1,11 @@
 # Correção da dinâmica e da RUL — 20/10/2026
 
+> Atualização de 23/10/2026: a [política de exibição](validacao-exibicao-rul-2026-10-23.md)
+> passou a mostrar também estimativas de baixa confiança durante a degradação.
+> O limite de erro descrito abaixo agora qualifica o valor em vez de ocultá-lo.
+> As métricas do modelo permanecem as mesmas; os ensaios abaixo registram a
+> política anterior. Condição saudável continua sem prazo identificável.
+
 Este documento substitui, para o estado atual, a conclusão de RUL sempre
 inconclusiva de `validacao-rul-2026-10-20.md`. Os dados e modelos antigos foram
 preservados nos volumes. As alterações desta etapa integram a publicação na

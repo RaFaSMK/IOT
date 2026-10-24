@@ -14,15 +14,31 @@ class RulUncertaintyTests(unittest.TestCase):
         for estimate in [1500, 2500]:
             result = qualify_rul(estimate, 99.8, self.calibration())
             self.assertIsNone(result['rul_hours'])
-            self.assertEqual(result['rul_status'], 'uncertain')
+            self.assertEqual(result['rul_status'], 'not_identifiable')
             self.assertEqual(result['rul_estimate_hours'], estimate)
             self.assertNotIn('rul_interval', result)
             self.assertFalse(limit_checks({'health': 99.8, **result})['rul_below_limit'])
 
-    def test_large_validation_error_suppresses_false_precision(self):
+    def test_large_validation_error_is_visible_with_low_confidence(self):
         result = qualify_rul(500, 65, self.calibration(400))
-        self.assertIsNone(result['rul_hours'])
+        self.assertEqual(result['rul_hours'], 500)
+        self.assertEqual(result['rul_status'], 'low_confidence')
         self.assertEqual(result['rul_interval'], [100, 900])
+
+    def test_published_low_point_does_not_override_interval_for_alerts(self):
+        result = qualify_rul(24, 80, self.calibration(50))
+        self.assertEqual(result['rul_hours'], 24)
+        self.assertEqual(result['rul_status'], 'low_confidence')
+        self.assertFalse(limit_checks({'health': 80, **result})['rul_below_limit'])
+        self.assertIn('BAIXA CONFIANÇA', prediction_facts({'health': 80, **result}))
+
+    def test_simulated_error_threshold_changes_label_instead_of_hiding_value(self):
+        for estimate, radius, status in [(1, .5, 'estimated'), (1, .51, 'low_confidence'), (4, 1, 'estimated'), (4, 1.01, 'low_confidence')]:
+            calibration = self.calibration(radius)
+            calibration['unit'] = 'simulated_operating_hours'
+            result = qualify_rul(estimate, 60, calibration)
+            self.assertEqual(result['rul_hours'], estimate)
+            self.assertEqual(result['rul_status'], status)
 
     def test_precise_enough_degraded_estimate_is_retained(self):
         result = qualify_rul(200, 50, self.calibration(40))

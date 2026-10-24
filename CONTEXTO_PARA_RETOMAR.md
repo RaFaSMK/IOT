@@ -1,5 +1,9 @@
 # Contexto para retomar o projeto após formatar o PC
 
+> **Temperaturas, 23/10/2026:** ruído ambiente reduzido, água quatro vezes mais lenta e inércia térmica causal compartilhada entre gerador e simulador. Modelo ativo preservado e reavaliado em três cenários normais/seis de falha. Ver [a validação térmica](docs/validacao-temperaturas-2026-10-23.md). Alterações incluídas na publicação na `main` autorizada pelo usuário, sem novo treino.
+
+> **Atualização de 23/10/2026:** a RUL agora também mostra valores de baixa confiança durante a degradação, com `≈`, faixa experimental e gráfico tracejado. Saúde >= 90 continua sem prazo identificável. Modelo/dataset não mudaram. Ver [a política de exibição atual](docs/validacao-exibicao-rul-2026-10-23.md). As mudanças integram a publicação na `main` autorizada pelo usuário.
+
 > **Atualização de 20/10/2026 — leia primeiro [a validação RUL v2](docs/validacao-rul-v2-2026-10-20.md) e [RETOMADA_20-10-2026.md](RETOMADA_20-10-2026.md).** Pasta atual: `C:\Users\rafa\Documents\IOT`. A dinâmica foi alinhada entre treino e simulador, e o novo modelo ativo passou a fornecer RUL numérica na fase final da degradação, em horas de operação simuladas. As alterações integram a publicação na `main`, autorizada pelo usuário. Dataset e modelo treinado permanecem nos volumes locais. As conclusões e métricas históricas abaixo foram obtidas na dinâmica anterior.
 
 > Atualização de 11/10/2026: projeto recuperado em `E:\Projetos\IOT`, volumes restaurados e 14 serviços permanentes saudáveis. Login dos três papéis, histórico e telemetria/previsões por WebSocket foram verificados; dataset e modelo ativo anteriores foram recuperados. A pedido do usuário, backups locais e scripts de restauração foram removidos. Os dados em uso continuam nos volumes Docker. Consulte [o guia do notebook](docs/apresentar-no-notebook.md) para preparar outra máquina.

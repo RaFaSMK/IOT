@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import {court, fresh, predictionFresh, canOperate, deviceState, rulText, rulIntervalText} from '@/services/court'
+import {court, fresh, predictionFresh, canOperate, deviceState, rulText, rulIntervalText, rulQualityText} from '@/services/court'
 import DataChart from './DataChart.vue'
 const emit = defineEmits<{command: [identifier: string, action: string, on?: boolean]}>()
 const container = ref<HTMLDivElement>()
@@ -20,7 +20,8 @@ const value = computed(() => {
   return selected.value === 'compressor_01' ? (court.telemetry?.actuators.cooling ? 'Em operação' : 'Desligado') : '—'
 })
 const positions: Record<string, [number, number, number]> = {
-  ambient_temperature: [-6, 1.7, -6], humidity: [-5, 1.7, -6], luminosity: [-4, 1.7, -6],
+  // Sensores ambientais distribuídos pela lateral externa, fora da área de jogo.
+  ambient_temperature: [-5.9, 1.7, -5.5], humidity: [-5.9, 1.7, -1], luminosity: [-5.9, 1.7, 3.5],
   water_temperature: [7.1, 2.2, 2.6], compressor_temperature: [7.4, .8, 1.85], compressor_current: [8.85, .8, 3.4], compressor_vibration: [7.4, .8, 4.95],
   compressor_01: [7.4, .7, 3.4], cooling: [7.4, 1.7, 3.4], floodlights: [-5, 4.8, 5.6], highlight_button: [5, 1.2, 0], simulator: [-7, .8, -6],
 }
@@ -101,7 +102,10 @@ onMounted(() => {
       if (id === 'highlight_button') marker.rotation.z = -Math.PI / 2
       marker.userData.device = id; scene.add(marker); markers[id] = marker; objects.push(marker)
     }
-    const sensorLabels: Record<string, string> = {compressor_temperature: 'Temperatura', compressor_current: 'Corrente', compressor_vibration: 'Vibração'}
+    const sensorLabels: Record<string, string> = {
+      ambient_temperature: 'Temperatura', humidity: 'Umidade', luminosity: 'Luminosidade',
+      compressor_temperature: 'Temperatura', compressor_current: 'Corrente', compressor_vibration: 'Vibração',
+    }
     for (const [id, position] of Object.entries(positions)) {
       if (['compressor_01','cooling','floodlights','water_temperature','simulator'].includes(id)) continue
       const title = sensorLabels[id] || court.devices.find(item => item.id === id)?.name || id
@@ -159,7 +163,7 @@ onUnmounted(() => dispose())
 <template>
   <section class="twin-layout">
     <div class="scene-panel"><div class="scene-label"><strong>Quadra ao vivo</strong><span>{{fresh ? 'Clique nos equipamentos para inspecionar' : 'Sem dados · animações pausadas'}}</span></div><p v-if="failure" role="alert">{{failure}}</p><div ref="container" class="scene-container"></div><div class="legend"><span class="normal">● Normal</span><span class="warning">● Atenção</span><span class="critical">● Crítico</span><span>● Sem dados</span></div></div>
-    <aside class="item-panel"><label>Inspecionar<select v-model="selected"><option v-for="item in court.devices.filter(item => positions[item.id])" :key="item.id" :value="item.id">{{item.name}}</option></select></label><h2>{{device?.name || selected}}</h2><code>{{selected}}</code><strong class="reading">{{value}}</strong><p>{{fresh ? 'Última leitura recebida' : 'Leitura antiga · sem dados recentes'}}</p><DataChart :points="court.history[chartId] || []" :label="device?.kind === 'actuator' ? '0 desligado · 1 ligado' : device?.unit" /><h3>Saúde estimada do compressor</h3><p>{{predictionFresh && court.prediction?.status === 'ready' ? court.prediction.health?.toFixed(0) + '/100' : 'Previsão indisponível'}}</p><p>RUL: {{rulText}}</p><p v-if="rulIntervalText">{{rulIntervalText}}</p><div v-if="canOperate && (selected === 'floodlights' || selected === 'cooling')" class="commands"><button @click="emit('command', selected, 'set', true)">Ligar</button><button @click="emit('command', selected, 'set', false)">Desligar</button><small v-if="selected === 'cooling'">A regra automática pode alterar a refrigeração conforme a temperatura da água.</small></div><button v-if="canOperate && selected === 'highlight_button'" @click="emit('command', selected, 'highlight')">Registrar highlight</button></aside>
+    <aside class="item-panel"><label>Inspecionar<select v-model="selected"><option v-for="item in court.devices.filter(item => positions[item.id])" :key="item.id" :value="item.id">{{item.name}}</option></select></label><h2>{{device?.name || selected}}</h2><code>{{selected}}</code><strong class="reading">{{value}}</strong><p>{{fresh ? 'Última leitura recebida' : 'Leitura antiga · sem dados recentes'}}</p><DataChart :points="court.history[chartId] || []" :label="device?.kind === 'actuator' ? '0 desligado · 1 ligado' : device?.unit" /><h3>Saúde estimada do compressor</h3><p>{{predictionFresh && court.prediction?.status === 'ready' ? court.prediction.health?.toFixed(0) + '/100' : 'Previsão indisponível'}}</p><p>RUL: {{rulText}}</p><p v-if="rulQualityText" :style="{color: court.prediction?.rul_status === 'low_confidence' ? '#f2bd65' : undefined}">{{rulQualityText}}</p><p v-if="rulIntervalText">{{rulIntervalText}}</p><div v-if="canOperate && (selected === 'floodlights' || selected === 'cooling')" class="commands"><button @click="emit('command', selected, 'set', true)">Ligar</button><button @click="emit('command', selected, 'set', false)">Desligar</button><small v-if="selected === 'cooling'">A regra automática pode alterar a refrigeração conforme a temperatura da água.</small></div><button v-if="canOperate && selected === 'highlight_button'" @click="emit('command', selected, 'highlight')">Registrar highlight</button></aside>
   </section>
 </template>
 <style scoped>

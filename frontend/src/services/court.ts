@@ -89,8 +89,13 @@ function receive(event: Event) {
 export const rulText = computed(() => {
   const prediction = court.prediction
   if (!predictionFresh.value || prediction?.status !== 'ready') return 'Indisponível'
-  if (prediction.rul_hours == null) return 'Inconclusiva'
-  return prediction.rul_hours.toLocaleString('pt-BR', {maximumFractionDigits: 1}) + (prediction.rul_unit === 'simulated_operating_hours' ? ' h simuladas' : ' h (estimativa)')
+  if (prediction.rul_hours == null) return prediction.rul_status === 'not_identifiable' ? 'Sem prazo identificado' : 'Inconclusiva'
+  return (prediction.rul_status === 'low_confidence' ? '≈ ' : '') + prediction.rul_hours.toLocaleString('pt-BR', {maximumFractionDigits: 1}) + (prediction.rul_unit === 'simulated_operating_hours' ? ' h simuladas' : ' h (estimativa)')
+})
+
+export const rulQualityText = computed(() => {
+  if (!predictionFresh.value || court.prediction?.status !== 'ready' || court.prediction.rul_hours == null) return ''
+  return court.prediction.rul_status === 'low_confidence' ? 'Baixa confiança' : 'Estimativa experimental'
 })
 
 export const rulIntervalText = computed(() => {

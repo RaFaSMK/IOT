@@ -9,7 +9,7 @@ import numpy as np
 import paho.mqtt.client as mqtt
 from .config import credential
 from .contracts import Event, Command
-from .equipment import STEP_HOURS, PUBLISH_SECONDS, NATURAL_RATE, compressor_signals, load_at, ambient_at
+from .equipment import STEP_HOURS, PUBLISH_SECONDS, NATURAL_RATE, AMBIENT_NOISE, compressor_signals, load_at, ambient_at
 
 log = logging.getLogger(__name__)
 
@@ -21,6 +21,7 @@ class Court:
         self.floodlights = False
         self.paused = False
         self.water = 19.
+        self.compressor_temperature = float(ambient_at(0)) + 1
         self.wear = 0.
         self.fault = False
         self.tick = 0
@@ -59,16 +60,18 @@ class Court:
         hours = self.tick * STEP_HOURS
         hour = hours % 24
         daylight = max(0, np.sin((hour - 6) * np.pi / 12))
-        ambient = float(ambient_at(hours)) + self.rng.normal(0, .25)
+        ambient = float(ambient_at(hours)) + self.rng.normal(0, AMBIENT_NOISE)
         humidity = 72 - 23 * daylight + self.rng.normal(0, 1)
         luminosity = 60000 * daylight + self.rng.uniform(0, 50)
         if self.cooling:
             self.wear = min(1., self.wear + STEP_HOURS * (self.fault_rate if self.fault else NATURAL_RATE))
-            self.water += .10 + self.wear * .22 - .35
+            # Água com maior inércia: aquecimento e resfriamento quatro vezes mais lentos.
+            self.water += .25 * (.10 + self.wear * .22 - .35)
         else:
-            self.water += (ambient - self.water) * .018
+            self.water += (ambient - self.water) * .0045
         self.water = float(np.clip(self.water, 5, ambient))
-        temperature, current, vibration = compressor_signals(ambient, load_at(hours), self.wear, self.cooling, self.mode, self.offsets, self.rng)
+        temperature, current, vibration = compressor_signals(ambient, load_at(hours), self.wear, self.cooling, self.mode, self.offsets, self.rng, previous_temperature=self.compressor_temperature)
+        self.compressor_temperature = float(temperature)
         return Event(type='telemetry', device_id='compressor_01', payload={
             'court_id': 'court_01',
             'sensors': {'ambient_temperature': round(float(ambient), 2), 'humidity': round(float(humidity), 2), 'luminosity': round(float(luminosity), 1), 'water_temperature': round(self.water, 2), 'compressor_temperature': round(float(temperature), 2), 'compressor_current': round(float(current), 3), 'compressor_vibration': round(float(vibration), 3)},

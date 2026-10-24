@@ -11,7 +11,7 @@ from sklearn.compose import TransformedTargetRegressor
 from .config import DATA_DIR
 from .contracts import LabConfig
 from .features import features, FEATURE_NAMES, WINDOW
-from .equipment import PHYSICS_VERSION, STEP_HOURS, NATURAL_RATE, compressor_signals, load_at, ambient_at
+from .equipment import PHYSICS_VERSION, STEP_HOURS, NATURAL_RATE, AMBIENT_NOISE, TEMPERATURE_PROFILE, compressor_signals, load_at, ambient_at
 
 MAX_ROWS = 2_000_000
 
@@ -58,10 +58,10 @@ def generate(identifier, config: LabConfig, progress=lambda *_: None):
         rate = (1 - onset * NATURAL_RATE) / duration
         degrade = np.clip(natural + np.maximum(0, operating - onset) * rate, 0, 1)
         load = load_at(hours, phase)
-        ambient = ambient_at(hours, phase) + rng.normal(0, .25, steps)
+        ambient = ambient_at(hours, phase) + rng.normal(0, AMBIENT_NOISE, steps)
         mode = rng.choice(config.failure_modes)
         offsets = rng.normal(0, [.6, .04, .05])
-        signals = compressor_signals(ambient, load, degrade, cooling, mode, offsets, rng, config.noise)
+        signals = compressor_signals(ambient, load, degrade, cooling, mode, offsets, rng, config.noise, sample_hours=config.interval_minutes / 60)
         replicas = np.tile(signals, (1, config.sensors_per_type)) + rng.normal(0, .08 * config.noise, (steps, 3 * config.sensors_per_type))
         missing = rng.random(replicas.shape) < config.missing_percent / 100
         outliers = rng.random(replicas.shape) < config.outlier_percent / 100
@@ -90,6 +90,7 @@ def generate(identifier, config: LabConfig, progress=lambda *_: None):
     for array in [x, y, groups, readings]:
         array.flush()
     result = {'id': identifier, 'rows': rows, 'readings': rows * 3 * config.sensors_per_type, 'equipment_count': config.equipment_count, 'config': config.model_dump(), 'physics_version': PHYSICS_VERSION, 'features': FEATURE_NAMES, 'window': WINDOW, 'step_hours': STEP_HOURS, 'rul_unit': 'simulated_operating_hours', 'label_columns': ['health', 'rul_hours']}
+    result['temperature_profile'] = TEMPERATURE_PROFILE
     temporary = directory / 'metadata.tmp'
     temporary.write_text(json.dumps(result))
     temporary.replace(metadata_file)
@@ -159,6 +160,7 @@ def train(identifier, dataset_id, progress=lambda *_: None):
     calibration = calibrate_rul(models, x, y, val_idx, test_idx)
     accepted = all(value['beats_baseline'] for value in metrics.values())
     result = {'version': identifier, 'dataset_id': dataset_id, 'metrics': metrics, 'accepted': accepted, 'physics_version': PHYSICS_VERSION, 'rul_unit': 'simulated_operating_hours', 'step_hours': STEP_HOURS, 'rul_calibration': calibration, 'split': {'train': partitions[0].tolist(), 'validation': partitions[1].tolist(), 'test': partitions[2].tolist()}, 'features': FEATURE_NAMES, 'window': WINDOW}
+    result['temperature_profile'] = metadata.get('temperature_profile', 'instant-v1')
     model_dir = safe_path(identifier, 'models')
     model_dir.mkdir(parents=True, exist_ok=True)
     joblib.dump({'models': models, 'metadata': result}, model_dir / 'model.joblib')
@@ -211,7 +213,7 @@ def qualify_rul(estimate, health, calibration):
     if health >= 90:
         # O regressor condicional não foi treinado para prazos saudáveis.
         # Nem ponto nem faixa dessa extrapolação podem alimentar alertas.
-        result['rul_status'] = 'uncertain'
+        result['rul_status'] = 'not_identifiable'
         result['rul_reason'] = 'Leituras sem desgaste suficiente para identificar um prazo de falha.'
         return result
     if calibration.get('binning') == 'predicted_rul':
@@ -220,15 +222,14 @@ def qualify_rul(estimate, health, calibration):
         band = next(item for item in calibration['bins'] if item['health_min'] <= health < item['health_max'])
     radius = band['radius_hours']
     result['rul_interval'] = [max(0., estimate - radius), estimate + radius]
-    # Política explícita: erro de validação amplo não vira prazo pontual.
+    # Erro amplo qualifica a estimativa como baixa confiança, sem ocultá-la.
+    # A faixa continua sendo usada pelas regras de alerta, não apenas o ponto.
     allowance = .5 if calibration.get('unit') == 'simulated_operating_hours' else 48.
     uncertain = radius > max(allowance, .25 * estimate)
-    result['rul_status'] = 'uncertain' if uncertain else 'estimated'
-    result['rul_reason'] = ('Leituras sem desgaste suficiente para identificar um prazo de falha.' if health >= 90 else
-                            'Erro de validação amplo para fornecer um prazo pontual.' if uncertain else
+    result['rul_status'] = 'low_confidence' if uncertain else 'estimated'
+    result['rul_reason'] = ('Estimativa de baixa confiança: erro de validação amplo; interprete o valor junto com a faixa experimental.' if uncertain else
                             'Estimativa experimental com faixa de erro medida em dados sintéticos.')
-    if not uncertain:
-        result['rul_hours'] = estimate
+    result['rul_hours'] = estimate
     return result
 
 

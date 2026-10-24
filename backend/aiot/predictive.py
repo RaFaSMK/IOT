@@ -33,6 +33,8 @@ def prediction_facts(prediction):
         if 'rul_interval' not in prediction and not checks['rul_below_limit']:
             rul_state = 'NÃO abaixo'
         rul_text = f'RUL: {rul} horas, {rul_state} do limite {RUL_LIMIT_HOURS} horas.'
+        if prediction.get('rul_status') == 'low_confidence':
+            rul_text += ' Estimativa de BAIXA CONFIANÇA; o valor pontual não é um prazo confirmado.'
     if prediction.get('rul_interval'):
         low, high = prediction['rul_interval']
         rul_text += f' Faixa experimental: {low:.0f} a {high:.0f} horas; não é um prazo calibrado em equipamento real.'
@@ -59,7 +61,7 @@ def assistant_predictions(events, alerts, now=None):
                 'source_timestamp': timestamp, 'fresh': fresh}
         if payload.get('status') == 'ready' and fresh:
             item.update(health=payload['health'], rul_hours=payload['rul_hours'],
-                        rul_unit=payload.get('rul_unit'),
+                        rul_unit=payload.get('rul_unit'), rul_status=payload.get('rul_status'),
                         limit_checks=limit_checks(payload), facts=prediction_facts(payload))
         else:
             item['facts'] = 'Não há previsão recente disponível; não afirmar valores ou limites atuais.'

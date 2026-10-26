@@ -215,6 +215,9 @@ def qualify_rul(estimate, health, calibration):
         # Nem ponto nem faixa dessa extrapolação podem alimentar alertas.
         result['rul_status'] = 'not_identifiable'
         result['rul_reason'] = 'Leituras sem desgaste suficiente para identificar um prazo de falha.'
+        # Referência física separada da RUL: desgaste natural constante, sem
+        # início de uma falha. Arredondar evita sugerir precisão da previsão.
+        result['rul_reference_hours'] = round((health / 100) / NATURAL_RATE / 100) * 100
         return result
     if calibration.get('binning') == 'predicted_rul':
         band = next(item for item in calibration['bins'] if item['rul_min'] <= estimate and (item['rul_max'] is None or estimate < item['rul_max']))

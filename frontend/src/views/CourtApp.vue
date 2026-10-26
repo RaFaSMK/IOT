@@ -37,6 +37,16 @@ const question = ref('')
 const chat = ref<{role: string; text: string}[]>([])
 const chatBusy = ref(false)
 const chatStatus = ref('')
+const chatPhase = ref('')
+const chatStarted = ref(0)
+const chatSeconds = computed(() => Math.max(0, Math.floor((court.now - chatStarted.value) / 1000)))
+const chatElapsed = computed(() => chatSeconds.value < 60 ? `${chatSeconds.value}s` : `${Math.floor(chatSeconds.value / 60)}min ${chatSeconds.value % 60}s`)
+const chatHint = computed(() => {
+  if (chatPhase.value === 'loading') return 'A primeira consulta pode levar mais tempo para iniciar.'
+  if (chatPhase.value === 'preparing') return 'Reunindo as informações atuais da quadra.'
+  if (chatSeconds.value >= 30) return 'A análise continua. O processamento local pode levar cerca de um minuto ou mais.'
+  return 'Consultando os dados da quadra para preparar sua resposta.'
+})
 let chatAbort: AbortController | undefined
 const activeModel = computed(() => models.value.find(model => model.active) || models.value[0])
 const latestModel = computed(() => models.value[0])
@@ -52,6 +62,17 @@ const nav = computed(() => [
 const pageTitle = computed(() => nav.value.find(item => item.id === page.value)?.name)
 const roleLabel = computed(() => ({viewer: 'Visualizador', operator: 'Operador', admin: 'Administrador'}[court.user?.role || 'viewer']))
 const insightStatus = computed(() => ({no_model: 'Gere os dados e treine os modelos.', warming_up: 'Coletando a janela inicial de leituras.', equipment_off: 'Compressor desligado; previsão suspensa.', incompatible_model: 'Gere e treine um dataset da dinâmica atual.', incompatible_sampling: 'A cadência do dispositivo não corresponde ao modelo.', ready: 'Inferência em tempo real'}[court.prediction?.status || 'no_model']))
+const insightReady = computed(() => predictionFresh.value && court.prediction?.status === 'ready')
+const lifeReference = computed(() => insightReady.value && court.prediction?.rul_status === 'not_identifiable' && court.prediction?.rul_reference_hours != null)
+const lifeHours = computed(() => insightReady.value ? (lifeReference.value ? court.prediction?.rul_reference_hours : court.prediction?.rul_hours) : null)
+const lifeValue = computed(() => lifeHours.value != null ? `≈ ${number(lifeHours.value, lifeReference.value ? 0 : 1)}` : 'Aguardando')
+const lifeLabel = computed(() => lifeReference.value ? 'Cenário sem falhas' : lifeHours.value != null ? rulQualityText.value : 'Estimativa indisponível')
+const lifeDescription = computed(() => {
+  if (!insightReady.value) return predictionFresh.value ? insightStatus.value : 'Aguardando uma previsão recente do compressor.'
+  if (lifeReference.value) return 'Referência por desgaste natural. Uma nova falha pode reduzir esse tempo.'
+  if (lifeHours.value == null) return court.prediction?.rul_reason || 'Ainda não há dados suficientes para estimar o tempo restante.'
+  return rulIntervalText.value || 'Estimativa conforme a degradação atual.'
+})
 const statusLabels: Record<string, string> = {normal: 'Normal', warning: 'Atenção', critical: 'Crítico', no_data: 'Sem dados'}
 const jobLabels: Record<string, string> = {queued: 'Na fila', running: 'Em execução', completed: 'Concluído', failed: 'Falhou'}
 
@@ -107,7 +128,7 @@ async function ask() {
   const text = question.value; question.value = ''; chat.value.push({role: 'user', text})
   const answer = {role: 'assistant', text: ''}; chat.value.push(answer)
   const index = chat.value.length - 1
-  chatBusy.value = true; chatStatus.value = 'Carregando o modelo local…'; error.value = ''
+  chatBusy.value = true; chatPhase.value = 'preparing'; chatStatus.value = 'Preparando a consulta…'; chatStarted.value = Date.now(); error.value = ''
   chatAbort = new AbortController()
   try {
     const response = await fetch('/api/assistant', {method: 'POST', headers: {'Content-Type': 'application/json', Authorization: `Bearer ${court.token}`}, body: JSON.stringify({question: text}), signal: chatAbort.signal})
@@ -124,12 +145,17 @@ async function ask() {
         if (!part.startsWith('data: ')) continue
         const data = JSON.parse(part.slice(6))
         if (data.error) throw new Error(data.error)
-        if (data.status === 'loading') chatStatus.value = data.text
-        else {chatStatus.value = ''; const item = chat.value[index]; if (item) item.text += data.text || ''}
+        if (data.status) {chatPhase.value = data.status; chatStatus.value = data.text}
+        else {chatPhase.value = 'streaming'; chatStatus.value = ''; const item = chat.value[index]; if (item) item.text += data.text || ''}
       }
     }
-  } catch (e) {if (!(e instanceof DOMException && e.name === 'AbortError')) error.value = e instanceof Error ? e.message : String(e)}
-  finally {chatBusy.value = false; chatStatus.value = ''}
+  } catch (e) {
+    if (!(e instanceof DOMException && e.name === 'AbortError')) {
+      error.value = e instanceof Error ? e.message : String(e)
+      if (chat.value[index] && !chat.value[index].text) chat.value[index].text = 'Não foi possível concluir a resposta. Tente enviar a pergunta novamente.'
+    }
+  }
+  finally {chatBusy.value = false; chatStatus.value = ''; chatPhase.value = ''}
 }
 
 const unsubscribe = subscribe((event: Event) => {
@@ -237,13 +263,76 @@ onUnmounted(() => {clearInterval(timer); clearInterval(poll); unsubscribe(); cha
       </template>
 
       <template v-if="page === 'insights'">
-        <section class="panel"><div class="section-heading"><div><span class="eyebrow">MANUTENÇÃO PREDITIVA</span><h2>Compressor do bebedouro</h2><p>{{insightStatus}}</p></div><span class="tag" :class="deviceState('compressor_01')">{{statusLabels[deviceState('compressor_01')]}}</span></div><div class="summary-grid"><div><span>Saúde estimada</span><h2>{{predictionFresh && court.prediction?.status === 'ready' ? number(court.prediction.health, 0) + '/100' : '—'}}</h2></div><div><span>Vida útil restante</span><h2>{{rulText}}</h2><span v-if="rulQualityText" class="tag" :class="court.prediction?.rul_status === 'low_confidence' ? 'warning' : 'normal'">{{rulQualityText}}</span></div><div><span>Versão em uso</span><p><code>{{court.prediction?.version?.slice(0, 8) || 'Sem modelo'}}</code></p></div><div><span>Última previsão</span><p>{{court.prediction?.source_timestamp ? time(court.prediction.source_timestamp) : '—'}}</p></div></div><p v-if="predictionFresh && court.prediction?.status === 'ready'">{{court.prediction.rul_reason}} {{rulIntervalText}}</p><p>Saúde é uma estimativa da condição atual e pode variar com as leituras. Durante a degradação, a RUL mostra também valores de baixa confiança, sinalizados com ≈ e acompanhados da faixa experimental. Sem degradação suficiente, o modelo não identifica um prazo de falha. A estimativa não é uma contagem regressiva. Cada leitura a cada 2 segundos representa 5 minutos simulados. A RUL indica horas de funcionamento se a degradação atual continuar; as paradas não consomem essas horas. Faixas medidas em dados sintéticos, sem validação em compressor real.</p><h3>Falha simulada</h3><p>A degradação avança enquanto o compressor opera. O ciclo automático pode desligá-lo e pausar a previsão. O prazo aparece assim que a saúde estimada fica abaixo de 90/100 e a janela de medições está completa, mesmo com baixa confiança. A IA recebe somente as medições e o relógio simulado, sem os rótulos verdadeiros.</p><div class="button-row"><button :disabled="!canOperate || busy" @click="send('compressor_01', 'inject_fault')">Injetar falha</button><button class="secondary" :disabled="!canOperate || busy" @click="send('compressor_01', 'reset_fault')">Restaurar equipamento</button></div></section>
+        <section class="panel compressor-overview">
+          <div class="compressor-heading">
+            <div><span class="eyebrow">MANUTENÇÃO PREDITIVA</span><h2>Compressor do bebedouro</h2><p>{{insightReady ? 'Condição atual do equipamento' : insightStatus}}</p></div>
+            <span class="tag" :class="deviceState('compressor_01')">Sensores: {{statusLabels[deviceState('compressor_01')]}}</span>
+          </div>
+          <div class="compressor-metrics">
+            <div class="health-metric">
+              <span class="metric-label">Saúde estimada</span>
+              <div class="health-number"><strong>{{insightReady ? number(court.prediction?.health, 0) : '—'}}</strong><span>/100</span></div>
+              <meter v-if="insightReady" :value="court.prediction?.health" min="0" max="100" low="40" high="90" optimum="100" aria-label="Saúde estimada do compressor"></meter>
+              <p>{{!insightReady ? 'Aguardando dados' : (court.prediction?.health ?? 0) >= 90 ? 'Sem desgaste significativo detectado' : 'Degradação detectada'}}</p>
+            </div>
+            <div class="life-metric" :class="{'is-reference': lifeReference}">
+              <div class="life-heading"><span class="metric-label">Vida útil restante</span><span class="life-quality" :class="{'warning': court.prediction?.rul_status === 'low_confidence'}">{{lifeLabel}}</span></div>
+              <div class="life-number"><strong :class="{'no-estimate': lifeHours == null}">{{lifeValue}}</strong><span v-if="lifeHours != null">horas de operação simuladas</span></div>
+              <p>{{lifeDescription}}</p>
+            </div>
+          </div>
+          <div class="compressor-meta">
+            <span>Modelo <code>{{court.prediction?.version?.slice(0, 8) || 'Sem modelo'}}</code></span>
+            <span>Última previsão <time>{{court.prediction?.source_timestamp ? time(court.prediction.source_timestamp) : 'Aguardando'}}</time></span>
+          </div>
+          <details class="prediction-explainer">
+            <summary>Como interpretar essas horas</summary>
+            <div class="explanation-grid">
+              <div><h3>Quando o equipamento está saudável</h3><p>O cenário sem falhas projeta a saúde estimada até o desgaste total, usando a taxa natural do simulador: 0,006 ponto de saúde por hora de operação. Com saúde 99/100, a referência é de aproximadamente 16.500 horas, supondo desgaste constante e nenhuma nova falha. O valor é arredondado para centenas de horas.</p></div>
+              <div><h3>Quando há degradação</h3><p>Abaixo de 90/100, o modelo estima a vida restante se a degradação atual continuar. A faixa experimental mostra o erro observado na validação; valores com erro amplo recebem a indicação de baixa confiança.</p></div>
+            </div>
+            <p>São cenários de uma simulação, sem validação em compressor real. Não representam uma garantia de duração. As paradas não consomem horas de operação; cada leitura a cada 2 segundos representa 5 minutos simulados. A estimativa pode variar e não é uma contagem regressiva.</p>
+          </details>
+          <div class="fault-controls">
+            <div><h3>Simular uma falha</h3><p>Observe o efeito na saúde e no tempo restante durante a operação.</p></div>
+            <div class="button-row"><button :disabled="!canOperate || busy" @click="send('compressor_01', 'inject_fault')">Injetar falha</button><button class="secondary" :disabled="!canOperate || busy" @click="send('compressor_01', 'reset_fault')">Restaurar equipamento</button></div>
+          </div>
+        </section>
         <div class="two-columns"><section class="panel"><h2>Tendência de saúde</h2><DataChart :points="court.history.health || []" label="0–100" /></section><section class="panel"><h2>RUL estimada · experimental</h2><p>A linha tracejada inclui estimativas de baixa confiança. Sem degradação suficiente, com compressor desligado ou sem dados recentes, há uma interrupção.</p><DataChart :points="court.history.rul_hours || []" label="h simuladas" experimental /></section></div>
         <div class="two-columns"><section class="panel"><h2>Tendência de vibração</h2><DataChart :points="court.history.compressor_vibration || []" label="mm/s" /></section><section class="panel"><h2>Alertas preditivos</h2><article v-for="alert in alerts" :key="alert.id" class="alert-item"><span class="tag" :class="alert.active ? 'critical' : 'normal'">{{alert.active ? 'Ativo' : 'Resolvido'}}</span><p>{{alert.message}}</p></article><p v-if="!alerts.length" class="empty">Nenhum alerta registrado.</p><small>Histerese: 3 previsões críticas para abrir; 10 normais para limpar.</small></section></div>
       </template>
 
       <template v-if="page === 'assistant'">
-        <section class="panel"><h2>Assistente da quadra</h2><p>Pergunte sobre as leituras, alertas, saúde do compressor, métricas dos modelos ou arquitetura. As respostas são geradas pelo modelo local.</p><div class="chat-log"><article v-for="(message, index) in chat" :key="index" :class="['chat-message', message.role]"><strong>{{message.role === 'user' ? 'Você' : 'Assistente'}}</strong><p>{{message.text || '…'}}</p></article><p v-if="!chat.length" class="empty">Exemplo: “Qual o estado do compressor e o que significa o alerta?”</p></div><p v-if="chatStatus" role="status">{{chatStatus}}</p><form @submit.prevent="ask" class="chat-form"><textarea v-model="question" placeholder="Sua pergunta sobre os dados da quadra" maxlength="2000" rows="3" :disabled="chatBusy"></textarea><button :disabled="chatBusy || !question.trim()">{{chatBusy ? 'Respondendo…' : 'Enviar pergunta'}}</button></form><small>Até 5 perguntas por minuto por usuário. Respostas exibidas como texto, sem HTML ou imagens.</small></section>
+        <section class="panel assistant-panel">
+          <h2>Assistente da quadra</h2>
+          <p>Pergunte sobre as leituras, alertas, saúde do compressor, métricas dos modelos ou arquitetura.</p>
+          <div class="chat-log" :aria-busy="chatBusy">
+            <article v-for="(message, index) in chat" :key="index" :class="['chat-message', message.role, {'is-waiting': chatBusy && index === chat.length - 1 && !message.text}]">
+              <strong>{{message.role === 'user' ? 'Você' : 'Assistente'}}</strong>
+              <div v-if="chatBusy && index === chat.length - 1 && !message.text" class="assistant-wait">
+                <div class="wait-heading">
+                  <span class="thinking-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+                  <span role="status" aria-live="polite">{{chatStatus}}</span>
+                  <span class="wait-time" aria-label="Tempo de espera">{{chatElapsed}}</span>
+                </div>
+                <p class="wait-hint">{{chatHint}}</p>
+                <div class="wait-track" aria-hidden="true"><span></span></div>
+                <ol class="wait-stages" aria-label="Etapas da resposta">
+                  <li :class="{current: chatPhase === 'preparing', complete: chatPhase !== 'preparing'}">Preparar</li>
+                  <li :class="{current: chatPhase === 'loading' || chatPhase === 'processing'}">Analisar</li>
+                  <li>Responder</li>
+                </ol>
+              </div>
+              <p v-else-if="message.text">{{message.text}}</p>
+            </article>
+            <p v-if="!chat.length" class="empty">Exemplo: “Qual o estado do compressor e o que significa o alerta?”</p>
+          </div>
+          <form @submit.prevent="ask" class="chat-form">
+            <textarea v-model="question" aria-label="Sua pergunta sobre os dados da quadra" placeholder="Sua pergunta sobre os dados da quadra" maxlength="2000" rows="3" :disabled="chatBusy"></textarea>
+            <button :disabled="chatBusy || !question.trim()"><span v-if="chatBusy" class="button-spinner" aria-hidden="true"></span>{{chatBusy ? (chatPhase === 'streaming' ? 'Respondendo…' : 'Aguarde…') : 'Enviar pergunta'}}</button>
+          </form>
+          <small>Respostas com modelo local · Até 5 perguntas por minuto por usuário.</small>
+        </section>
       </template>
 
       <template v-if="page === 'admin' && isAdmin">
@@ -256,4 +345,20 @@ onUnmounted(() => {clearInterval(timer); clearInterval(poll); unsubscribe(); cha
 
 <style scoped>
 .court-app{display:grid;grid-template-columns:220px 1fr;min-height:100vh}.sidebar{position:sticky;top:0;height:100vh;background:#0d1723;border-right:1px solid #253242;padding:28px 20px;display:flex;flex-direction:column;gap:25px}.brand{display:flex;align-items:center;gap:12px;color:#e2e8f0;text-decoration:none;line-height:1.25}.brand-mark{display:grid;place-items:center;width:42px;height:42px;background:#38d9ae;color:#08231b;font-weight:900;border-radius:12px;font-size:24px}.eyebrow{color:#6f91a4;font-size:11px;letter-spacing:1.6px;font-weight:700}.sidebar nav{display:flex;flex-direction:column;gap:4px}.sidebar nav button{text-align:left;background:none;color:#9eb0c0;border-radius:8px;padding:10px 12px;font-weight:500}.sidebar nav button.active{background:#173b35;color:#6ef0ca}.sidebar-bottom{margin-top:auto;display:grid;gap:8px}.workspace{max-width:1500px;width:100%;padding:30px clamp(18px,3vw,45px);display:flex;flex-direction:column;gap:22px}.page-header,.section-heading{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap}.page-header h1{font-size:28px;margin-top:6px}.live-badge{font-size:12px;display:grid;grid-template-columns:8px 1fr;gap:5px 8px;color:#63e6be}.live-badge>span{width:7px;height:7px;background:#63e6be;border-radius:50%;margin-top:5px}.live-badge small{grid-column:2;color:#7890a3}.live-badge.offline{color:#f2bd65}.live-badge.offline>span{background:#f2bd65}.panel{background:#101c2a;border:1px solid #243346;border-radius:14px;padding:24px;min-width:0}.panel h2{font-size:18px;margin-bottom:12px}.panel h3{font-size:14px;margin:15px 0 6px}.panel p{color:#91a5b7;font-size:14px;margin-bottom:14px}.summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}.summary-grid h2{font-size:30px;margin:10px 0 4px}.summary-grid p{margin:0}.two-columns{display:grid;grid-template-columns:1.3fr 1fr;gap:20px}.sensor-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:18px}.sensor{border-left:3px solid #38d9ae;background:#152332;padding:12px;display:flex;flex-direction:column;gap:5px}.sensor>span{font-size:12px;color:#9eb0c0}.sensor strong{font-size:22px}.sensor.warning{border-color:#f2bd65}.sensor.critical{border-color:#f87171}.sensor.no_data{border-color:#62748a}.control-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:16px 0;border-bottom:1px solid #253242;margin-bottom:15px}.control-row p{margin:4px 0 0;font-size:12px}.button-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}button{background:#38d9ae;border:0;color:#09261e;padding:10px 16px;border-radius:8px;cursor:pointer;font:inherit;font-size:13px;font-weight:650;transition:background .2s}button:hover{background:#67ebc8}button:disabled{opacity:.45;cursor:not-allowed}.secondary{background:#233446;color:#d6e4ef}.secondary:hover{background:#2e465e}.text-button{background:none;color:#88cebf;padding:4px 8px;font-size:12px}.text-button:hover{background:#173b35}input,select,textarea{width:100%;background:#0b1521;color:#d6e4ef;border:1px solid #30455b;border-radius:7px;padding:10px;font:inherit;font-size:13px;min-width:0}select{width:auto;max-width:100%}input:focus,select:focus,textarea:focus{outline:2px solid #38d9ae;outline-offset:1px}.form-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;align-items:end;margin-top:20px}.form-grid label,.form-stack label{display:flex;flex-direction:column;gap:8px;font-size:12px;color:#a8bbcb}.form-grid .check{flex-direction:row;align-items:center;justify-content:flex-start}.check input{width:auto}.form-grid select{width:100%}fieldset{border:1px solid #30455b;border-radius:7px;padding:12px;display:grid;gap:8px;font-size:12px}legend{color:#a8bbcb}.tag{display:inline-block;padding:4px 8px;border-radius:6px;background:#26394a;font-size:11px;color:#aec5d5}.normal{color:#63e6be}.warning{color:#f2bd65}.critical{color:#f87171}.no_data{color:#7890a3}.error,.notice,.stale{border-radius:8px;padding:12px 16px;font-size:13px}.error{color:#fca5a5;background:#3b2026;border:1px solid #734049}.notice{color:#8eead1;background:#12382f;border:1px solid #295d50}.stale{color:#f2cd8d;background:#332a1d;border:1px solid #5d4b2c}table{border-collapse:collapse;width:100%;font-size:12px;margin-top:18px;text-align:left}th{color:#7794a9;font-weight:600;border-bottom:1px solid #30455b;padding:12px}td{padding:12px;border-bottom:1px solid #213142;color:#c5d3de}.table-scroll{overflow-x:auto}pre{white-space:pre-wrap;word-break:break-word;font-size:11px;max-height:340px;overflow:auto;background:#0b1521;padding:14px;border-radius:7px}code{font-size:11px}small{font-size:11px;color:#7890a3}.panel>small{display:block;margin-top:14px}.empty{text-align:center;color:#7890a3;padding:30px 15px}.message-log{max-height:450px;overflow:auto}details{padding:9px 0;border-bottom:1px solid #213142}summary{cursor:pointer;font-size:12px;display:flex;gap:12px;align-items:center}summary small{margin-left:auto}.job{padding:16px 0;border-bottom:1px solid #243346}progress{width:100%;height:7px;accent-color:#38d9ae;margin:14px 0}.alert-item{border-bottom:1px solid #243346;padding:12px 0}.chat-log{min-height:280px;max-height:550px;overflow-y:auto;margin:22px 0;display:flex;flex-direction:column;gap:15px}.chat-message{background:#172b3c;border-radius:9px;padding:14px 18px;max-width:90%;align-self:flex-start}.chat-message.user{background:#153c33;align-self:flex-end}.chat-message strong{font-size:12px;color:#74c9b4}.chat-message p{white-space:pre-wrap;word-break:break-word;margin:8px 0 0;color:#d3e0e9;font-size:14px}.chat-form{display:flex;gap:12px;align-items:flex-end}.chat-form textarea{flex:1}footer{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-top:auto;font-size:11px;color:#607f92;padding-top:20px;border-top:1px solid #243346}footer a{color:#86baa9;text-decoration:none}hr{border:0;border-top:1px solid #253242;margin:20px 0}.login-wrap{min-height:100vh;display:grid;place-items:center;padding:30px;background:radial-gradient(ellipse at 50% 20%,#12372e,transparent 65%)}.login-card{width:100%;max-width:440px;border:1px solid #2c4354;background:#101c2a;border-radius:20px;padding:38px}.login-card h1{font-size:30px;margin:12px 0 16px}.login-card>p{font-size:14px;color:#9eb0c0}.form-stack{display:flex;flex-direction:column;gap:18px;margin:28px 0}.login-card>small{display:block;line-height:1.8}@media(max-width:1000px){.court-app{grid-template-columns:175px 1fr}.sidebar{padding:24px 12px}.summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.two-columns{grid-template-columns:1fr}.form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:650px){.court-app{display:block}.sidebar{height:auto;position:static;padding:18px}.sidebar nav{flex-direction:row;overflow-x:auto;gap:5px}.sidebar nav button{white-space:nowrap}.sidebar>.eyebrow{display:none}.sidebar-bottom{display:flex;align-items:center;gap:12px}.workspace{padding:22px 14px}.form-grid{grid-template-columns:1fr}.panel{padding:18px}.sensor-grid{grid-template-columns:1fr}.page-header h1{font-size:24px}.chat-form{flex-direction:column;align-items:stretch}}
+
+.chat-message.is-waiting{width:480px;max-width:100%;padding:20px;background:#122735;border:1px solid #2b4a55;border-radius:4px 14px 14px 14px}
+.assistant-wait{margin-top:18px}.wait-heading{display:flex;align-items:center;gap:12px;color:#d3e0e9;font-size:14px;font-weight:500}.wait-time{margin-left:auto;color:#a8bbcb;font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}.chat-message .wait-hint{color:#9eb0c0;font-size:12px;line-height:1.7;margin:14px 0 18px;max-width:48ch;min-height:40px}
+.thinking-mark{display:flex;align-items:center;gap:3px;height:24px;flex-shrink:0}.thinking-mark i{display:block;width:3px;height:9px;border-radius:3px;background:#63e6be;animation:thinking-wave 1.2s ease-in-out infinite}.thinking-mark i:nth-child(2){animation-delay:.12s}.thinking-mark i:nth-child(3){animation-delay:.24s}.thinking-mark i:nth-child(4){animation-delay:.36s}.thinking-mark i:nth-child(5){animation-delay:.48s}
+.wait-track{height:2px;background:#29404d;border-radius:2px;overflow:hidden}.wait-track span{display:block;width:35%;height:100%;background:#63e6be;animation:thinking-travel 2s ease-in-out infinite}.wait-stages{list-style:none;display:flex;justify-content:space-between;gap:10px;padding:0;margin:14px 0 0;font-size:11px;color:#91a6b7}.wait-stages li{display:flex;align-items:center;gap:7px}.wait-stages li:before{content:'';width:5px;height:5px;border:1px solid currentColor;border-radius:50%}.wait-stages .current{color:#63e6be}.wait-stages .current:before,.wait-stages .complete:before{background:currentColor}.wait-stages .complete{color:#b5d8ce}
+.chat-form button{display:inline-flex;align-items:center;justify-content:center;gap:9px;min-width:145px}.button-spinner{width:13px;height:13px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:thinking-spin .8s linear infinite}
+@keyframes thinking-wave{0%,100%{transform:scaleY(.65);opacity:.55}50%{transform:scaleY(2);opacity:1}}@keyframes thinking-travel{0%{transform:translateX(-110%)}100%{transform:translateX(390%)}}@keyframes thinking-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.thinking-mark i,.wait-track span,.button-spinner{animation:none}.thinking-mark i:nth-child(odd){height:16px}.wait-track span{width:100%;opacity:.5}}
+@media(max-width:650px){.chat-message.is-waiting{padding:16px}.wait-heading{gap:8px;font-size:12px}.wait-time{font-size:11px}.wait-stages{font-size:10px}}
+
+.compressor-heading{display:flex;align-items:center;justify-content:space-between;gap:20px}.compressor-heading h2{margin:5px 0 0}.compressor-heading p{margin:8px 0 0;font-size:13px}.compressor-heading>.tag{flex-shrink:0}
+.compressor-metrics{display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);margin-top:28px;border-top:1px solid #29404d;border-bottom:1px solid #29404d}.health-metric,.life-metric{padding:26px 0;min-width:0}.health-metric{padding-right:36px}.life-metric{padding-left:36px;border-left:1px solid #29404d}.metric-label{font-size:13px;color:#a8bbcb}.health-number,.life-number{margin-top:14px;min-height:80px;display:flex;align-items:baseline;gap:8px;font-variant-numeric:tabular-nums}.health-number strong,.life-number strong{font-size:clamp(32px,3.5vw,52px);line-height:1.15;letter-spacing:-1.5px;white-space:nowrap}.health-number strong{color:#8eead1}.health-number>span{font-size:20px;color:#7890a3}.life-number{flex-direction:column;gap:6px}.life-number>span{font-size:12px;color:#9eb0c0}.life-number strong.no-estimate{font-size:28px;letter-spacing:-.5px}.health-metric p,.life-metric>p{font-size:12px;line-height:1.6;margin:14px 0 0;color:#9eb0c0;max-width:55ch;min-height:38px}.life-heading{display:flex;align-items:center;gap:12px;justify-content:space-between;flex-wrap:wrap}.life-quality{font-size:11px;color:#8eead1}.is-reference .life-quality{color:#b9ccdf}.health-metric meter{display:block;width:min(240px,100%);height:5px;margin-top:10px;background:#243b46;border:0;border-radius:5px;overflow:hidden}.health-metric meter::-webkit-meter-bar{background:#243b46;border:0}.health-metric meter::-webkit-meter-optimum-value{background:#63e6be}.health-metric meter::-webkit-meter-suboptimum-value{background:#f2bd65}.health-metric meter::-webkit-meter-even-less-good-value{background:#f87171}
+.compressor-meta{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:16px 0;color:#7890a3;font-size:11px}.compressor-meta code,.compressor-meta time{margin-left:8px;color:#b7c8d6;font-variant-numeric:tabular-nums}.prediction-explainer{padding:0;border-bottom:0}.prediction-explainer summary{width:fit-content;padding:8px 0;color:#b7c8d6;font-size:12px;gap:8px;list-style:none}.prediction-explainer summary:before{content:'+';font-size:18px;color:#63e6be}.prediction-explainer[open] summary:before{content:'−'}.prediction-explainer summary:focus-visible{outline:2px solid #38d9ae;outline-offset:4px}.explanation-grid{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:16px}.explanation-grid h3{font-size:13px;margin:0}.explanation-grid p,.prediction-explainer>p{font-size:12px;line-height:1.8;color:#9eb0c0}.fault-controls{display:flex;align-items:center;justify-content:space-between;gap:20px;border-top:1px solid #29404d;padding-top:20px;margin-top:18px}.fault-controls h3{margin:0;font-size:14px}.fault-controls p{font-size:12px;margin:7px 0 0;max-width:50ch}.fault-controls .button-row{flex-shrink:0}.fault-controls button{font-size:12px;padding:11px 14px}
+.life-quality.warning{color:#f2bd65}
+@media(max-width:1000px){.fault-controls{align-items:flex-start;flex-direction:column}.health-metric{padding-right:22px}.life-metric{padding-left:22px}}
+@media(max-width:650px){.compressor-heading{align-items:flex-start;flex-direction:column;gap:12px}.compressor-metrics{grid-template-columns:1fr;margin-top:20px}.health-metric{padding:22px 0}.life-metric{padding:22px 0;border-left:0;border-top:1px solid #29404d}.health-number,.life-number{min-height:0}.health-number strong,.life-number strong{font-size:40px}.health-metric p,.life-metric>p{min-height:0}.explanation-grid{grid-template-columns:1fr;gap:16px}.compressor-meta{align-items:flex-start;flex-direction:column}.fault-controls .button-row{flex-wrap:wrap}}
 </style>

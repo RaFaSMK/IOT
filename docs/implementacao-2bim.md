@@ -1,5 +1,7 @@
 # Implementação do segundo bimestre
 
+Para conduzir a apresentação, use o [roteiro com falas, fluxos e passo a passo na aplicação](roteiro-apresentacao-2bim.md). Este documento mantém a referência técnica.
+
 ## Escopo
 
 O projeto mantém a marcação de highlights de beach tennis e acrescenta os componentes exigidos para a versão AIoT:
@@ -101,6 +103,8 @@ O gerador usa NumPy por equipamento/bloco e salva matrizes com memmap. Limites: 
 Na dinâmica `compressor-v2`, cada publicação a cada 2 segundos representa 5 minutos simulados. A RUL é medida em horas de operação simuladas, supondo continuidade da degradação; não é prazo de relógio real. O regressor de RUL é treinado/avaliado somente na degradação observável. Em condição saudável, não há prazo identificado; durante a degradação, estimativas com erro amplo aparecem como baixa confiança. Consulte [a validação v2](validacao-rul-v2-2026-10-20.md) e a [política de exibição atual](validacao-exibicao-rul-2026-10-23.md) antes de apresentar as métricas.
 
 Treino e inferência usam `aiot/features.py`: última leitura, média, desvio, máximo e tendência de uma janela temporal causal de 55 minutos simulados (12 pontos a cada 5 minutos), com temperatura do compressor compensada pelo ambiente e tendências por hora. Ausências são preenchidas causalmente e outliers limitados a faixas físicas amplas. Alvos de saúde e tempo até a falha existem somente no dataset. O simulador não envia desgaste ou rótulos para a IA.
+
+Desde 26/10/2026, Insights também exibe uma referência saudável separada da RUL, identificada como **Cenário sem falhas**. O campo `rul_reference_hours` extrapola a saúde estimada pela taxa natural do simulador (0,006 ponto de saúde por hora), arredondando para centenas de horas. Com saúde exatamente 99/100, a referência é aproximadamente 16.500 horas de operação simuladas, supondo desgaste constante e nenhuma nova falha. `rul_hours` continua sem prazo identificado nessa condição; a referência não alimenta alertas de RUL nem representa vida útil validada em compressor real.
 
 Equipamentos são separados em treino (60%), validação (20%) e teste (20%). Cada conjunto usa até 50 mil amostras para o ajuste/avaliação, preservando o dataset massivo. Dois ExtraTreesRegressor são comparados à média do treino. A versão só entra em uso se ambos vencerem a baseline em MAE de validação e MAE/RMSE de teste. A troca do artefato é atômica; a inferência recarrega sem reiniciar.
 

@@ -2,6 +2,8 @@
 
 ## Versão AIoT — segundo bimestre
 
+**Roteiro para apresentar:** [passo a passo com falas sugeridas, diagramas dos fluxos e demonstração na aplicação](docs/roteiro-apresentacao-2bim.md).
+
 **Para apresentar em outra máquina:** siga [o passo a passo do notebook](docs/apresentar-no-notebook.md), incluindo preparo dos modelos e ensaio sem internet.
 
 **Conferência do enunciado:** [checklist com testes e pendências, verificada em 12/10/2026](docs/checklist-professor-2bim.md).

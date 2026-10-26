@@ -393,12 +393,21 @@ async def assistant(body: ChatBody, user=Depends(current_user)):
     facts = sections(data)
     system = selection_prompt(facts)
     async def stream():
-        yield 'data: ' + json.dumps({'status': 'loading', 'text': 'Carregando o modelo local…'}) + '\n\n'
+        yield 'data: ' + json.dumps({'status': 'preparing', 'text': 'Preparando a consulta…'}) + '\n\n'
         try:
             buffer = ''
             sent = set()
             done = False
             async with httpx.AsyncClient(timeout=httpx.Timeout(300, connect=10)) as http:
+                loaded = await http.get('http://ollama:11434/api/ps')
+                loaded.raise_for_status()
+                if not any(model.get('name') == MODEL or model.get('model') == MODEL for model in loaded.json().get('models', [])):
+                    yield 'data: ' + json.dumps({'status': 'loading', 'text': 'Carregando o modelo local…'}) + '\n\n'
+                    warmup = await http.post('http://ollama:11434/api/generate', json={'model': MODEL, 'stream': False, 'keep_alive': '30m'})
+                    warmup.raise_for_status()
+                    if warmup.json().get('error'):
+                        raise RuntimeError(warmup.json()['error'])
+                yield 'data: ' + json.dumps({'status': 'processing', 'text': 'Analisando sua pergunta…'}) + '\n\n'
                 async with http.stream('POST', 'http://ollama:11434/api/chat', json={'model': MODEL, 'stream': True, 'format': selection_schema(facts), 'keep_alive': '30m', 'messages': [{'role': 'system', 'content': system}, {'role': 'user', 'content': body.question}], 'options': {'temperature': 0, 'num_predict': 200}}) as response:
                     response.raise_for_status()
                     async for line in response.aiter_lines():

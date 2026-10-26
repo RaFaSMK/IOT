@@ -25,6 +25,14 @@ class RulUncertaintyTests(unittest.TestCase):
         self.assertEqual(result['rul_status'], 'low_confidence')
         self.assertEqual(result['rul_interval'], [100, 900])
 
+    def test_healthy_reference_is_natural_wear_scenario_not_failure_prediction(self):
+        result = qualify_rul(17, 99, self.calibration())
+        self.assertEqual(result['rul_reference_hours'], 16500)
+        self.assertIsNone(result['rul_hours'])
+        self.assertFalse(limit_checks({'health': 99, **result})['rul_below_limit'])
+        self.assertNotIn('rul_reference_hours', qualify_rul(17, 89, self.calibration()))
+        self.assertNotIn('rul_reference_hours', qualify_rul(17, 99, None))
+
     def test_published_low_point_does_not_override_interval_for_alerts(self):
         result = qualify_rul(24, 80, self.calibration(50))
         self.assertEqual(result['rul_hours'], 24)

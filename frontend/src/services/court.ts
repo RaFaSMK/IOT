@@ -4,7 +4,7 @@ export interface User { username: string; role: 'viewer' | 'operator' | 'admin' 
 export interface Device { id: string; name: string; kind: string; unit: string; config: { min?: number; max?: number }; enabled: boolean }
 export interface Event { id: string; timestamp: string; type: string; device_id: string; payload: Record<string, unknown>; correlation_id?: string }
 export interface Telemetry { sensors: Record<string, number>; actuators: Record<string, boolean>; simulation?: {step_hours: number; elapsed_hours: number} }
-export interface Prediction { status: string; version?: string; health?: number; rul_hours?: number | null; rul_status?: string; rul_reason?: string; rul_interval?: [number, number]; rul_unit?: string; step_hours?: number; source_timestamp?: string }
+export interface Prediction { status: string; version?: string; health?: number; rul_hours?: number | null; rul_reference_hours?: number; rul_status?: string; rul_reason?: string; rul_interval?: [number, number]; rul_unit?: string; step_hours?: number; source_timestamp?: string }
 export interface Job { id: string; kind: string; status: string; progress: number; config: Record<string, unknown>; result: Record<string, unknown>; timestamp: string }
 export interface Metrics { test: {mae: number; rmse: number; r2: number}; validation: {mae: number; rmse: number; r2: number}; baseline: {mae: number; rmse: number; r2: number}; beats_baseline: boolean; scope?: string; samples?: {train: number; validation: number; test: number}; scatter: {real: number; predicted: number}[]; importance: {feature: string; value: number}[] }
 export interface Model { id: string; active: boolean; timestamp: string; metrics: {metrics: Record<string, Metrics>; accepted: boolean; split: Record<string, number[]>} }
